@@ -47,11 +47,16 @@ xdg-settings set default-web-browser choosme.desktop
 [[application]]
 path = "/usr/share/applications/firefox.desktop"
 
-# it auto selects chrome if the URL starts with https://gmail.com
+# it auto selects chrome if
+# - the URL starts with https://gmail.com
+# - or we click on a google maps link
 [[application]]
 path = "~/.local/share/applications/chrome.desktop"
 prefixes = [
     "https://gmail.com"
+]
+regexps = [
+    "^https?://(www.)?google.(?:com|fr)/maps.*"
 ]
 
 # if you click to any link that is not gmail.com, it'll open choosme UI.
@@ -76,7 +81,6 @@ You can override the styling creating a CSS file here: `.config/choosme/style.cs
 
 ## TODOs
 
-- [ ] Support regexp for each `[[application]]`
 - [ ] Speed up start (maybe doing a daemon?)
 - [ ] Change configuration logic to be
 - [ ] Enter opens the last used browser

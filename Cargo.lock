@@ -107,6 +107,7 @@ dependencies = [
  "gdk4",
  "gtk4",
  "libadwaita",
+ "regex",
  "serde",
  "serde_json",
  "tokio",

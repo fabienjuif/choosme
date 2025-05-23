@@ -3,6 +3,7 @@ use adw::{ActionRow, Application};
 use anyhow::Result;
 use gtk4::gio::{self, DesktopAppInfo};
 use gtk4::{self as gtk, Align, Box, Image, Label, ListBox, Orientation, SelectionMode, Window};
+use regex::Regex;
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -239,8 +240,7 @@ struct DesktopFileConfigFile {
     // TODO: make path optional, and just resolve by name
     path: String,
     prefixes: Option<Vec<String>>,
-    // TODO:
-    // regexps: Vec<String>,
+    regexps: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -274,6 +274,7 @@ fn read_css_file() -> Result<String> {
 struct DesktopFileConfig {
     app_info: DesktopAppInfo,
     prefixes: Vec<String>,
+    regexps: Vec<Regex>,
 }
 
 impl DesktopFileConfig {
@@ -282,17 +283,26 @@ impl DesktopFileConfig {
         files: &[gio::File],
         context: Option<&gio::AppLaunchContext>,
     ) -> Result<bool> {
-        if self.prefixes.is_empty() {
+        if self.prefixes.is_empty() && self.regexps.is_empty() {
             return Ok(false);
         }
         let Some(file) = files.first() else {
             return Ok(false);
         };
+        // testing prefixes since it should be faster than regexps
         for prefix in &self.prefixes {
             let file_path = file.uri().to_string();
             if file_path.starts_with(prefix) {
                 return self.try_open(files, context).map(|_| Ok(true))?;
             }
+        }
+        // and now regexps
+        for regexp in &self.regexps {
+            let file_path = file.uri().to_string();
+            if regexp.is_match(&file_path) {
+                return self.try_open(files, context).map(|_| Ok(true))?;
+            }
+            info!("regexp: {} - file_path: {}", regexp, file_path);
         }
         Ok(false)
     }
@@ -349,6 +359,18 @@ impl Config {
             desktop_files.push(DesktopFileConfig {
                 app_info,
                 prefixes: file.prefixes.unwrap_or_default(),
+                regexps: file
+                    .regexps
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|r| match Regex::new(r) {
+                        Ok(regex) => Some(regex),
+                        Err(e) => {
+                            error!("failed to compile regex '{}': {}", r, e);
+                            None
+                        }
+                    })
+                    .collect(),
             });
         }
         Config { desktop_files }
