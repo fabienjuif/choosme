@@ -158,6 +158,25 @@ fn main() {
             .child(&content)
             .build();
 
+        // mapping keyboard shortcuts to the listbox items
+        let key_controller = gtk::EventControllerKey::new();
+        let list_box_clone = list_box.clone();
+        key_controller.connect_key_pressed(move |_, keyval, _, _| {
+            if let Some(digit) = keyval.to_unicode().and_then(|c| c.to_digit(10)) {
+                // Adjust for 0-based indexing (key '1' maps to index 0)
+                let index = digit.saturating_sub(1) as i32;
+
+                if let Some(row) = list_box_clone.row_at_index(index) {
+                    if let Some(action_row) = row.downcast_ref::<ActionRow>() {
+                        adw::prelude::ActionRowExt::activate(action_row);
+                        return gtk::glib::Propagation::Stop;
+                    }
+                }
+            }
+            gtk::glib::Propagation::Proceed
+        });
+        window.add_controller(key_controller);
+
         // floating window initially and then become resizable in WMs like Sway.
         app.connect_active_window_notify(|app| {
             if let Some(active_window) = app.active_window() {

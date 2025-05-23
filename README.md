@@ -1,14 +1,21 @@
 xdg-settings set default-web-browser choosme.desktop
+
 xdg-settings set default-web-browser userapp-Firefox-OOAD52.desktop
+
+## Shortcuts
+
+- `1` open the first row
+- `2` open the 2nd row
+- etc
 
 ## TODOs
 
 - [ ] Support regexp for each `[[application]]`
-- [ ] keys 1, 2, 3, 4, 5, 6, 7, 8, 9, 0 to open associated row (starting at 1)
 - [ ] Close on Escape
 - [ ] CSS from a path (XDG)
 
 ## Great to have
+
 - [ ] Automatically choose from the source app, if discord -> this browser, if slack -> this browser
 
 ## Nice to have
