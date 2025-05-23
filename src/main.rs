@@ -10,7 +10,6 @@ use std::rc::Rc;
 use std::{env, fs};
 use tracing::level_filters::LevelFilter;
 use tracing::{debug, error, info, warn};
-use tracing_appender;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
@@ -30,7 +29,7 @@ fn main() {
         }
     };
 
-    let cfg = read_config()
+    let cfg = read_config_file()
         .map_err(|e| {
             error!("failed to read config: {}", e);
         })
@@ -41,6 +40,7 @@ fn main() {
         return;
     }
     let cfg = cfg.unwrap();
+    let cfg = Config::new_from_config_file(cfg);
 
     let application = Application::builder()
         .application_id(application_id)
@@ -50,10 +50,27 @@ fn main() {
     let shared_files: Rc<RefCell<Option<Vec<gio::File>>>> = Rc::new(RefCell::new(None));
     // connect to the 'open' signal, which is triggered when the application is launched with URIs/files.
     let shared_files_clone_open = Rc::clone(&shared_files);
-    application.connect_open(move |app, files, _hint| {
-        info!("hint: {:?}", _hint);
+    let cfg_clone_open = cfg.clone();
+    application.connect_open(move |app, files, hint| {
+        if !hint.is_empty() {
+            info!("xdg-open provided us an hint: {:?}", hint);
+        }
         if let Some(file) = files.first() {
             debug!("received `open` signal with file: {:?}", file);
+            for desktop_file_config in cfg_clone_open.desktop_files.iter() {
+                match desktop_file_config.open_on_match(files, None) {
+                    Ok(true) => {
+                        app.quit();
+                        return;
+                    }
+                    Ok(false) => {
+                        // do nothing
+                    }
+                    Err(e) => {
+                        error!("failed on open_on_match: {}", e);
+                    }
+                }
+            }
             *shared_files_clone_open.borrow_mut() = Some(files.to_vec());
         }
         // this ensures the window is shown even if the open signal is used.
@@ -84,41 +101,8 @@ fn main() {
             .build();
 
         let mut items_added = 0;
-        let home_dir_str = env::var("HOME")
-        .or_else(|_| env::var("USERPROFILE"))
-        .ok();
         for desktop_file_config in cfg.desktop_files.iter() {
-            let desktop_file_path_str = &desktop_file_config.path;
-            let mut desktop_file_path_buf = PathBuf::from(desktop_file_path_str);
-
-            if let Some(end) = desktop_file_path_str.strip_prefix("~/") {
-                if let Some(h_dir_path_str) = home_dir_str.as_ref() {
-                    let mut h_dir_path_buf = PathBuf::from(h_dir_path_str);
-                    h_dir_path_buf.push(end);
-                    desktop_file_path_buf = h_dir_path_buf;
-                } else {
-                    warn!(
-                        "unable to to resolve '~' in path: {}",
-                        desktop_file_path_str
-                    );
-                    continue;
-                }
-            }
-
-            let desktop_file_path = desktop_file_path_buf.as_path();
-            if !desktop_file_path.exists() {
-                warn!(
-                    "desktop file not found, skipping: {}",
-                    desktop_file_path_str
-                );
-                continue;
-            }
-
-            let Some(app_info) = DesktopAppInfo::from_filename(desktop_file_path) else {
-                warn!("unknown or corrupted desktop file '{:?}'", desktop_file_path);
-                continue;
-            };
-
+            let app_info = desktop_file_config.app_info.clone();
             let row = ActionRow::builder()
                 .activatable(true)
                 .title(app_info.name())
@@ -139,7 +123,7 @@ fn main() {
                 let files = shared_files_clone_active.borrow().clone().unwrap_or_default();
                 if let Err(e) = app_info.launch(files.as_slice(), None::<&gio::AppLaunchContext>) {
                     // TODO: dialog
-                    eprintln!("Failed to launch '{}' via GIO: {}", name_for_closure, e);
+                    error!("failed to launch '{}' via GIO: {}", name_for_closure, e);
                 }
                 app_for_closure.quit();
             });
@@ -223,29 +207,114 @@ fn main() {
 // }
 
 #[derive(Debug, Deserialize)]
-struct DesktopFileConfig {
+struct DesktopFileConfigFile {
     // TODO: make path optional, and just resolve by name
     path: String,
+    prefixes: Option<Vec<String>>,
     // TODO:
-    #[allow(dead_code)]
-    prefixes: Vec<String>,
+    // regexps: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Config {
+struct ConfigFile {
     #[serde(rename = "application")]
-    desktop_files: Vec<DesktopFileConfig>,
+    desktop_files: Vec<DesktopFileConfigFile>,
 }
 
-fn read_config() -> Result<Config> {
+fn read_config_file() -> Result<ConfigFile> {
     let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
     let config_path = xdg_dirs.place_config_file("config.toml")?;
     info!("config path: {}", config_path.display());
 
     let config_content = fs::read_to_string(&config_path)?;
-    let config: Config = toml::from_str(&config_content)?;
+    let config: ConfigFile = toml::from_str(&config_content)?;
 
     Ok(config)
+}
+
+#[derive(Clone)]
+struct DesktopFileConfig {
+    app_info: DesktopAppInfo,
+    prefixes: Vec<String>,
+}
+
+impl DesktopFileConfig {
+    fn open_on_match(
+        &self,
+        files: &[gio::File],
+        context: Option<&gio::AppLaunchContext>,
+    ) -> Result<bool> {
+        if self.prefixes.is_empty() {
+            return Ok(false);
+        }
+        let Some(file) = files.first() else {
+            return Ok(false);
+        };
+        for prefix in &self.prefixes {
+            let file_path = file.uri().to_string();
+            if file_path.starts_with(prefix) {
+                return self.try_open(files, context).map(|_| Ok(true))?;
+            }
+        }
+        Ok(false)
+    }
+
+    fn try_open(&self, files: &[gio::File], context: Option<&gio::AppLaunchContext>) -> Result<()> {
+        // let app_info = self.app_info.clone();
+        self.app_info.launch(files, context)?;
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct Config {
+    desktop_files: Vec<DesktopFileConfig>,
+}
+
+impl Config {
+    fn new_from_config_file(config_file: ConfigFile) -> Self {
+        let home_dir_str = env::var("HOME").or_else(|_| env::var("USERPROFILE")).ok();
+
+        let mut desktop_files = Vec::new();
+        for file in config_file.desktop_files {
+            let desktop_file_path_str = &file.path;
+            let mut desktop_file_path_buf = PathBuf::from(desktop_file_path_str);
+
+            if let Some(end) = desktop_file_path_str.strip_prefix("~/") {
+                if let Some(h_dir_path_str) = home_dir_str.as_ref() {
+                    let mut h_dir_path_buf = PathBuf::from(h_dir_path_str);
+                    h_dir_path_buf.push(end);
+                    desktop_file_path_buf = h_dir_path_buf;
+                } else {
+                    warn!(
+                        "unable to to resolve '~' in path: {}",
+                        desktop_file_path_str
+                    );
+                    continue;
+                }
+            }
+            let desktop_file_path = desktop_file_path_buf.as_path();
+            if !desktop_file_path.exists() {
+                warn!(
+                    "desktop file not found, skipping: {}",
+                    desktop_file_path_str
+                );
+                continue;
+            }
+            let Some(app_info) = DesktopAppInfo::from_filename(desktop_file_path) else {
+                warn!(
+                    "unknown or corrupted desktop file '{:?}'",
+                    desktop_file_path
+                );
+                continue;
+            };
+            desktop_files.push(DesktopFileConfig {
+                app_info,
+                prefixes: file.prefixes.unwrap_or_default(),
+            });
+        }
+        Config { desktop_files }
+    }
 }
 
 // the returned guard must be held for the duration you want logging to occur.
