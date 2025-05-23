@@ -64,17 +64,44 @@ You can override the styling creating a CSS file here: `.config/choosme/style.cs
 
 ```css
 /* main window */
-.main-window {}
+.main-window {
+}
 /* list of items */
-.boxed-list {}
+.boxed-list {
+}
 /* a row / item */
-.row {}
+.row {
+}
 ```
 
 ## TODOs
 
 - [ ] Support regexp for each `[[application]]`
 - [ ] Speed up start (maybe doing a daemon?)
+- [ ] Change configuration logic to be
+
+```toml
+[[rule]]
+prefix="http://github.com/fabienjuif"
+application="Firefox"
+
+# this rule apply only if the first one is not matching
+[[rule]]
+prefix="http://google.com"
+application="Chrome"
+
+# optional fallback rule if you want to avoid the UI to pop
+[[rule]]
+default="Firefox"
+
+[[application]]
+path=
+name="Firefox"
+
+[[application]]
+path=
+name="Chrome"
+```
 
 ## Great to have
 
