@@ -8,19 +8,27 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::{env, fs};
+use tracing::level_filters::LevelFilter;
 use tracing::{debug, error, info, warn};
+use tracing_appender;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::prelude::*;
 use xdg::BaseDirectories;
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing_subscriber::filter::LevelFilter::INFO.into()),
-        )
-        .init();
-
     let application_name = env!("CARGO_PKG_NAME");
     let application_id = format!("juif.fabien.{}", application_name);
+
+    // we keep the guard around for the duration of the application
+    // to ensure that all logs are flushed before the application exits.
+    let _guard = match init_logging(application_name) {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("failed to initialize logging: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     let cfg = read_config()
         .map_err(|e| {
@@ -43,6 +51,7 @@ fn main() {
     // connect to the 'open' signal, which is triggered when the application is launched with URIs/files.
     let shared_files_clone_open = Rc::clone(&shared_files);
     application.connect_open(move |app, files, _hint| {
+        info!("hint: {:?}", _hint);
         if let Some(file) = files.first() {
             debug!("received `open` signal with file: {:?}", file);
             *shared_files_clone_open.borrow_mut() = Some(files.to_vec());
@@ -237,4 +246,23 @@ fn read_config() -> Result<Config> {
     let config: Config = toml::from_str(&config_content)?;
 
     Ok(config)
+}
+
+// the returned guard must be held for the duration you want logging to occur.
+// when it is dropped, any buffered logs are flushed.
+fn init_logging(application_name: &str) -> Result<WorkerGuard> {
+    let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
+    let log_directory: PathBuf = xdg_dirs.create_state_directory("logs")?;
+    let file_appender = tracing_appender::rolling::daily(log_directory, application_name);
+    let (non_blocking_writer, _guard) = tracing_appender::non_blocking(file_appender);
+    let env_filter = EnvFilter::from_default_env().add_directive(LevelFilter::INFO.into());
+    let file_subscriber = tracing_subscriber::fmt::layer().with_writer(non_blocking_writer);
+    let console_subscriber = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
+    tracing_subscriber::registry()
+        .with(file_subscriber)
+        .with(console_subscriber)
+        .with(env_filter)
+        .init();
+
+    Ok(_guard)
 }
