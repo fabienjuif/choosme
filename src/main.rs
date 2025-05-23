@@ -1,20 +1,38 @@
+use adw::prelude::*;
 use adw::{ActionRow, Application};
-use adw::{MessageDialog, prelude::*};
+use anyhow::Result;
 use gtk4::gio::{self, DesktopAppInfo};
 use gtk4::{self as gtk, Align, Box, Image, Label, ListBox, Orientation, SelectionMode, Window};
+use serde::Deserialize;
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::PathBuf;
 use std::rc::Rc;
-
-const DESKTOP_FILES: &[&str] = &[
-    "/home/fabien/.local/share/applications/firefox.desktop",
-    "/home/fabien/.local/share/applications/firefox-cantina.desktop",
-    "/usr/share/applications/thunar.desktop",
-];
+use std::{env, fs};
+use tracing::{debug, error, info, warn};
+use xdg::BaseDirectories;
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing_subscriber::filter::LevelFilter::INFO.into()),
+        )
+        .init();
+
     let application_name = env!("CARGO_PKG_NAME");
     let application_id = format!("juif.fabien.{}", application_name);
+
+    let cfg = read_config()
+        .map_err(|e| {
+            error!("failed to read config: {}", e);
+        })
+        .ok();
+
+    if cfg.is_none() {
+        error!("app need to be configured for now.");
+        return;
+    }
+    let cfg = cfg.unwrap();
 
     let application = Application::builder()
         .application_id(application_id)
@@ -26,7 +44,7 @@ fn main() {
     let shared_files_clone_open = Rc::clone(&shared_files);
     application.connect_open(move |app, files, _hint| {
         if let Some(file) = files.first() {
-            println!("Choosme received `open` signal with file: {:?}", file);
+            debug!("received `open` signal with file: {:?}", file);
             *shared_files_clone_open.borrow_mut() = Some(files.to_vec());
         }
         // this ensures the window is shown even if the open signal is used.
@@ -41,7 +59,7 @@ fn main() {
             ",
         );
         gtk::style_context_add_provider_for_display(
-            &gtk::gdk::Display::default().expect("Could not connect to a display."),
+            &gtk::gdk::Display::default().expect("could not connect to a display."),
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
@@ -57,29 +75,38 @@ fn main() {
             .build();
 
         let mut items_added = 0;
-        for desktop_file_path_str in DESKTOP_FILES.iter() {
-            let desktop_file_path = Path::new(desktop_file_path_str);
+        let home_dir_str = env::var("HOME")
+        .or_else(|_| env::var("USERPROFILE"))
+        .ok();
+        for desktop_file_config in cfg.desktop_files.iter() {
+            let desktop_file_path_str = &desktop_file_config.path;
+            let mut desktop_file_path_buf = PathBuf::from(desktop_file_path_str);
 
+            if let Some(end) = desktop_file_path_str.strip_prefix("~/") {
+                if let Some(h_dir_path_str) = home_dir_str.as_ref() {
+                    let mut h_dir_path_buf = PathBuf::from(h_dir_path_str);
+                    h_dir_path_buf.push(end);
+                    desktop_file_path_buf = h_dir_path_buf;
+                } else {
+                    warn!(
+                        "unable to to resolve '~' in path: {}",
+                        desktop_file_path_str
+                    );
+                    continue;
+                }
+            }
+
+            let desktop_file_path = desktop_file_path_buf.as_path();
             if !desktop_file_path.exists() {
-                eprintln!(
-                    "Info: Desktop file not found, skipping: {}",
+                warn!(
+                    "desktop file not found, skipping: {}",
                     desktop_file_path_str
                 );
                 continue;
             }
 
-            let Some(app_info) = DesktopAppInfo::from_filename(desktop_file_path_str) else {
-                eprintln!("Unknown or corrupted desktop file '{}'", desktop_file_path_str);
-                let dialog = MessageDialog::builder()
-                    .heading(format!("Error for {}", desktop_file_path_str))
-                    .body(format!("Unknown or corrupted desktop file: {}", desktop_file_path_str))
-                    // .transient_for(&window)
-                    .modal(true)
-                    .build();
-                dialog.add_response("ok", "OK");
-                dialog.set_default_response(Some("ok"));
-                dialog.connect_response(None, |d, _| d.close());
-                dialog.present();
+            let Some(app_info) = DesktopAppInfo::from_filename(desktop_file_path) else {
+                warn!("unknown or corrupted desktop file '{:?}'", desktop_file_path);
                 continue;
             };
 
@@ -185,3 +212,29 @@ fn main() {
 //     let cursor = &json[0]["cursor"];
 //     Some((cursor["x"].as_f64()? as i32, cursor["y"].as_f64()? as i32))
 // }
+
+#[derive(Debug, Deserialize)]
+struct DesktopFileConfig {
+    // TODO: make path optional, and just resolve by name
+    path: String,
+    // TODO:
+    #[allow(dead_code)]
+    prefixes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Config {
+    #[serde(rename = "application")]
+    desktop_files: Vec<DesktopFileConfig>,
+}
+
+fn read_config() -> Result<Config> {
+    let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
+    let config_path = xdg_dirs.place_config_file("config.toml")?;
+    info!("config path: {}", config_path.display());
+
+    let config_content = fs::read_to_string(&config_path)?;
+    let config: Config = toml::from_str(&config_content)?;
+
+    Ok(config)
+}
