@@ -17,6 +17,7 @@ use tracing_subscriber::prelude::*;
 use xdg::BaseDirectories;
 
 fn main() {
+    debug!("start main");
     let application_name = env!("CARGO_PKG_NAME");
     let application_id = format!("juif.fabien.{}", application_name);
 
@@ -29,6 +30,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+    debug!("logging is initialized");
 
     let cfg = read_config_file()
         .map_err(|e| {
@@ -43,6 +45,8 @@ fn main() {
     let cfg = cfg.unwrap();
     let cfg = Config::new_from_config_file(cfg);
 
+    debug!("config is parsed");
+
     let application = Application::builder()
         .application_id(application_id)
         .flags(gio::ApplicationFlags::HANDLES_OPEN)
@@ -56,6 +60,7 @@ fn main() {
         if !hint.is_empty() {
             info!("xdg-open provided us an hint: {:?}", hint);
         }
+        debug!("app connected");
         if let Some(file) = files.first() {
             debug!("received `open` signal with file: {:?}", file);
             for desktop_file_config in cfg_clone_open.desktop_files.iter() {
@@ -79,6 +84,8 @@ fn main() {
     });
 
     application.connect_activate(move |app| {
+        debug!("app activated");
+
          // css
          match read_css_file() {
             Err(e) => {
@@ -94,6 +101,8 @@ fn main() {
                 );
             }
         };
+
+        debug!("CSS is loaded");
 
         let list_box = ListBox::builder()
             .margin_top(12)
@@ -163,6 +172,8 @@ fn main() {
             .child(&content)
             .build();
 
+        debug!("window is built");
+
         // mapping keyboard shortcuts
         let keys_controller = gtk::EventControllerKey::new();
         let list_box_clone = list_box.clone();
@@ -187,9 +198,12 @@ fn main() {
         });
         window.add_controller(keys_controller);
 
+        debug!("window is connected to key controller");
+
         // floating window initially and then become resizable in WMs like Sway.
         app.connect_active_window_notify(|app| {
             if let Some(active_window) = app.active_window() {
+                debug!("window is active");
                 // TODO: sync.Once here (otherwise this code triggers everytime the window is focused)
                 active_window.set_resizable(true);
 
@@ -212,6 +226,8 @@ fn main() {
 
         window.present();
     });
+
+    debug!("application is initialized and connected to activate signal");
 
     application.run();
 }
@@ -388,7 +404,9 @@ fn init_logging(application_name: &str) -> Result<WorkerGuard> {
     let log_directory: PathBuf = xdg_dirs.create_state_directory("logs")?;
     let file_appender = tracing_appender::rolling::daily(log_directory, application_name);
     let (non_blocking_writer, _guard) = tracing_appender::non_blocking(file_appender);
-    let env_filter = EnvFilter::from_default_env().add_directive(LevelFilter::INFO.into());
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
     let file_subscriber = tracing_subscriber::fmt::layer().with_writer(non_blocking_writer);
     let console_subscriber = tracing_subscriber::fmt::layer().with_writer(std::io::stdout);
     tracing_subscriber::registry()
