@@ -52,6 +52,7 @@ path = "/usr/share/applications/firefox.desktop"
 # - or we click on a google maps link
 [[application]]
 path = "~/.local/share/applications/chrome.desktop"
+alias="Google" # this will be the row title instead of the .desktop Name
 prefixes = [
     "https://gmail.com"
 ]

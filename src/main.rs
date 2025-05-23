@@ -109,7 +109,7 @@ fn main() {
             let app_info = desktop_file_config.app_info.clone();
             let row = ActionRow::builder()
                 .activatable(true)
-                .title(app_info.name())
+                .title(desktop_file_config.alias.as_ref().map_or(app_info.name(), |alias| alias.into()))
                 .css_classes(vec![String::from("row")])
                 .build();
             if let Some(icon) = app_info.icon() {
@@ -239,6 +239,8 @@ fn main() {
 struct DesktopFileConfigFile {
     // TODO: make path optional, and just resolve by name
     path: String,
+    /// if set, this name is printed instead of the one in the desktop file
+    alias: Option<String>,
     prefixes: Option<Vec<String>>,
     regexps: Option<Vec<String>>,
 }
@@ -273,6 +275,7 @@ fn read_css_file() -> Result<String> {
 #[derive(Clone)]
 struct DesktopFileConfig {
     app_info: DesktopAppInfo,
+    alias: Option<String>,
     prefixes: Vec<String>,
     regexps: Vec<Regex>,
 }
@@ -358,6 +361,7 @@ impl Config {
             };
             desktop_files.push(DesktopFileConfig {
                 app_info,
+                alias: file.alias,
                 prefixes: file.prefixes.unwrap_or_default(),
                 regexps: file
                     .regexps
