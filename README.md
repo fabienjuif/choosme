@@ -80,11 +80,19 @@ You can override the styling creating a CSS file here: `.config/choosme/style.cs
 }
 ```
 
-## TODOs
+## TODO
+- [ ] Daemon mode so we can start the window in background and print it when we receive a new event (faster prints). It also allow us to switch the default browser, and to remember the last used browser too.
 
+## Nice to have
+
+- [ ] Auto set as default web browser on first run
+- [ ] Auto detect browsers to init config file
+- [ ] Be able to add or remove apps from the UI
+- [ ] From the UI, have a drop down menu (hidden by default) where are presented the full URL (you can modify the URL to edit it) and the dns only, click on one of both, then you choose your app, it will be registred as your default app for this prefix
+- [ ] Open window near cursor in Sway
 - [ ] Speed up start (maybe doing a daemon?)
-- [ ] Change configuration logic to be
 - [ ] Enter opens the last used browser
+- [ ] Change configuration logic to be
 
 ```toml
 [[rule]]
@@ -108,15 +116,3 @@ name="Firefox"
 path=
 name="Chrome"
 ```
-
-## Great to have
-
-- [ ] Automatically choose from the source app, if discord -> this browser, if slack -> this browser
-
-## Nice to have
-
-- [ ] Auto set as default web browser on first run
-- [ ] Auto detect browsers to init config file
-- [ ] Be able to add or remove apps from the UI
-- [ ] From the UI, have a drop down menu (hidden by default) where are presented the full URL (you can modify the URL to edit it) and the dns only, click on one of both, then you choose your app, it will be registred as your default app for this prefix
-- [ ] Open window near cursor in Sway
