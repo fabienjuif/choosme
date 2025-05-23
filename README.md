@@ -11,8 +11,8 @@ xdg-settings set default-web-browser userapp-Firefox-OOAD52.desktop
 ## TODOs
 
 - [ ] Support regexp for each `[[application]]`
-- [ ] Close on Escape
 - [ ] CSS from a path (XDG)
+- [ ] Speed up start (maybe doing a daemon?)
 
 ## Great to have
 
