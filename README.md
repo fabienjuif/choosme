@@ -79,6 +79,7 @@ You can override the styling creating a CSS file here: `.config/choosme/style.cs
 - [ ] Support regexp for each `[[application]]`
 - [ ] Speed up start (maybe doing a daemon?)
 - [ ] Change configuration logic to be
+- [ ] Enter opens the last used browser
 
 ```toml
 [[rule]]
