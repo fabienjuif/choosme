@@ -3,12 +3,10 @@ xdg-settings set default-web-browser userapp-Firefox-OOAD52.desktop
 
 ## TODOs
 
-- [ ] Config file (XDG) to have a list of desktop files
-- [ ] In config file, for each desktop files, give a list of URL prefixes (or regexp?)
+- [ ] Support regexp for each `[[application]]`
 - [ ] keys 1, 2, 3, 4, 5, 6, 7, 8, 9, 0 to open associated row (starting at 1)
 - [ ] Close on Escape
 - [ ] CSS from a path (XDG)
-
 
 ## Great to have
 - [ ] Automatically choose from the source app, if discord -> this browser, if slack -> this browser
@@ -24,11 +22,11 @@ xdg-settings set default-web-browser userapp-Firefox-OOAD52.desktop
 `~/.config/choosme/config.toml`
 
 ```toml
-[[desktop_file]]
+[[application]]
 path = "/usr/share/applications/firefox.desktop"
-prefixes = ["https://*github.com"]
+prefixes = ["http://google.fr"]
 
-[[desktop_file]]
+[[application]]
 path = "/usr/local/share/applications/chrome.desktop"
 prefixes = ["https://*gmail.com"]
 ```
