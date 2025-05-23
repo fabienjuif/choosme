@@ -43,23 +43,37 @@ xdg-settings set default-web-browser choosme.desktop
 `~/.config/choosme/config.toml`
 
 ```toml
+# this app is never auto selected
 [[application]]
 path = "/usr/share/applications/firefox.desktop"
-prefixes = [
-    "http://google.fr"
-]
 
+# it auto selects chrome if the URL starts with https://gmail.com
 [[application]]
 path = "~/.local/share/applications/chrome.desktop"
 prefixes = [
     "https://gmail.com"
 ]
+
+# if you click to any link that is not gmail.com, it'll open choosme UI.
+# you then have to choose between Firefox and Chrome to open this link.
+```
+
+## Styling
+
+You can override the styling creating a CSS file here: `.config/choosme/style.css`.
+
+```css
+/* main window */
+.main-window {}
+/* list of items */
+.boxed-list {}
+/* a row / item */
+.row {}
 ```
 
 ## TODOs
 
 - [ ] Support regexp for each `[[application]]`
-- [ ] CSS from a path (XDG)
 - [ ] Speed up start (maybe doing a daemon?)
 
 ## Great to have

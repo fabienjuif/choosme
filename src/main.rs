@@ -78,18 +78,21 @@ fn main() {
     });
 
     application.connect_activate(move |app| {
-         // --- Inject hardcoded CSS ---
-        let provider = gtk::CssProvider::new();
-        provider.load_from_data(
-            "
-            ",
-        );
-        gtk::style_context_add_provider_for_display(
-            &gtk::gdk::Display::default().expect("could not connect to a display."),
-            &provider,
-            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
-        // --- End CSS Injection ---
+         // css
+         match read_css_file() {
+            Err(e) => {
+                warn!("failed to read css file: {}", e);
+            }
+            Ok(css_content) => {
+                let provider = gtk::CssProvider::new();
+                provider.load_from_data(&css_content);
+                gtk::style_context_add_provider_for_display(
+                    &gtk::gdk::Display::default().expect("could not connect to a display."),
+                    &provider,
+                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+                );
+            }
+        };
 
         let list_box = ListBox::builder()
             .margin_top(12)
@@ -106,6 +109,7 @@ fn main() {
             let row = ActionRow::builder()
                 .activatable(true)
                 .title(app_info.name())
+                .css_classes(vec![String::from("row")])
                 .build();
             if let Some(icon) = app_info.icon() {
                     let icon_image = Image::builder()
@@ -254,6 +258,16 @@ fn read_config_file() -> Result<ConfigFile> {
     let config: ConfigFile = toml::from_str(&config_content)?;
 
     Ok(config)
+}
+
+fn read_css_file() -> Result<String> {
+    let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
+    let css_path = xdg_dirs.place_config_file("style.css")?;
+    info!("css path: {}", css_path.display());
+
+    let css_content = fs::read_to_string(&css_path)?;
+
+    Ok(css_content)
 }
 
 #[derive(Clone)]
