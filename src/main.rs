@@ -5,12 +5,11 @@ mod desktop_files;
 mod ui;
 
 use adw::gio::prelude::ApplicationExtManual;
-use adw::glib::{self, ExitCode};
+use adw::glib::ExitCode;
 use anyhow::Result;
 use daemon::register_dbus;
 use desktop_files::run_desktop_file_opener;
-use glib::ControlFlow;
-use gtk4::prelude::{GtkApplicationExt, WidgetExt};
+use gtk4::prelude::{GtkApplicationExt, GtkWindowExt};
 use std::env;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -21,6 +20,8 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 use ui::start_ui;
 use xdg::BaseDirectories;
+
+const DAEMON_MODE: bool = true; // TODO: use clap to parse this
 
 fn main() {
     debug!("start main");
@@ -51,7 +52,7 @@ fn main() {
         }
     };
 
-    let (ui_tx, ui_rx) = mpsc::channel::<()>();
+    let (ui_tx, ui_rx) = mpsc::channel::<String>();
     let (jh_dekstop_files, desktop_files_tx) = run_desktop_file_opener(cfg.clone());
 
     // register dbus in daemon mode
@@ -69,32 +70,25 @@ fn main() {
 
     // start the ui
     // TODO: only if NOT a client mode, aka no daemon mode, not able to contact the daemon
-    let ui_application = start_ui(&application_id, application_name, &cfg, desktop_files_tx);
+    let ui_application = start_ui(
+        &application_id,
+        application_name,
+        &cfg,
+        desktop_files_tx,
+        ui_rx,
+    );
 
-    let ui_app_clone = ui_application.clone();
-    glib::source::idle_add_local(move || {
-        match ui_rx.try_recv() {
-            Ok(_) => {
-                if let Some(win) = ui_app_clone.active_window() {
-                    if win.is_visible() {
-                        win.hide();
-                    } else {
-                        win.show();
-                    }
-                } else {
-                    error!("no active window found");
-                }
+    // only if NOT daemon mode NOR connected to a daemon
+    if !DAEMON_MODE {
+        ui_application.connect_window_added(|app, _| {
+            info!("OPENED");
+            if let Some(window) = app.active_window() {
+                window.present();
+            } else {
+                error!("app opened but no active window found");
             }
-            Err(mpsc::TryRecvError::Empty) => {
-                // nothing to do, continue looping
-            }
-            Err(mpsc::TryRecvError::Disconnected) => {
-                info!("ui_rx disconnected");
-                return ControlFlow::Break;
-            }
-        }
-        ControlFlow::Continue
-    });
+        });
+    }
 
     info!("running application: {}", application_id);
     let exit_code = ui_application.run();

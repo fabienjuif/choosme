@@ -1,12 +1,12 @@
 use crate::config::{Config, read_css_file};
 use crate::desktop_files::{DesktopFileOpenerCommand, OpenParams, resolve_desktop_files};
-use adw::prelude::*;
 use adw::{ActionRow, Application};
+use adw::{glib, prelude::*};
 use gtk4::gio::{self};
 use gtk4::{self as gtk, Align, Box, Image, Label, ListBox, Orientation, SelectionMode, Window};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use tracing::{debug, error, info, warn};
 
 pub fn start_ui(
@@ -14,6 +14,7 @@ pub fn start_ui(
     application_name: &str,
     cfg: &Config,
     desktop_files_tx: Sender<DesktopFileOpenerCommand>,
+    ui_rx: Receiver<String>,
 ) -> Application {
     let application = Application::builder()
         .application_id(application_id)
@@ -21,6 +22,8 @@ pub fn start_ui(
         .build();
 
     let shared_files: Rc<RefCell<Option<Vec<gio::File>>>> = Rc::new(RefCell::new(None));
+    let shared_files_clone_open = Rc::clone(&shared_files);
+
     // connect to the 'open' signal, which is triggered when the application is launched with URIs/files.
     let cfg_clone = cfg.clone();
     let desktop_files_tx_clone = desktop_files_tx.clone();
@@ -159,7 +162,11 @@ pub fn start_ui(
         let app_clone = app.clone();
         keys_controller.connect_key_pressed(move |_, keyval, _, _| {
             if keyval == gtk4::gdk::Key::Escape {
-                app_clone.quit();
+                if let Some(window) = app_clone.active_window() {
+                    window.hide();
+                } else {
+                    error!("no active window found to hide");
+                }
                 return gtk::glib::Propagation::Stop;
             }
             if let Some(digit) = keyval.to_unicode().and_then(|c| c.to_digit(10)) {
@@ -178,33 +185,28 @@ pub fn start_ui(
         window.add_controller(keys_controller);
 
         debug!("window is connected to key controller");
+    });
 
-
-        // floating window initially and then become resizable in WMs like Sway.
-        app.connect_active_window_notify(|app| {
-            if let Some(active_window) = app.active_window() {
-                debug!("window is active");
-                // TODO: sync.Once here (otherwise this code triggers everytime the window is focused)
-                active_window.set_resizable(true);
-
-                // TODO: make this optional (via a config file)
-                // if let Some((x, y)) = get_cursor_position() {
-                //     let target_x = x; // TODO: maybe config offset?
-                //     let target_y = y; // TODO: maybe config offset?
-                //     if let Some( app_id) = app.application_id() {
-                //         let cmd = format!(
-                //             "[app_id=\"{}\"] floating enable, move position {} {}",
-                //             app_id, target_x, target_y
-                //         );
-                //         let _ = Command::new("swaymsg").arg(&cmd).status();
-                //     }
-                // } else {
-                //     eprintln!("Failed to get cursor position.");
-                // }
+    let app_clone = application.clone();
+    glib::source::idle_add_local(move || {
+        match ui_rx.try_recv() {
+            Ok(uri) => {
+                *shared_files_clone_open.borrow_mut() = Some(vec![gio::File::for_uri(&uri)]);
+                if let Some(win) = app_clone.active_window() {
+                    win.show();
+                } else {
+                    error!("no active window found");
+                }
             }
-        });
-
-        window.present();
+            Err(TryRecvError::Empty) => {
+                // nothing to do, continue looping
+            }
+            Err(TryRecvError::Disconnected) => {
+                info!("ui_rx disconnected");
+                return glib::ControlFlow::Break;
+            }
+        }
+        glib::ControlFlow::Continue
     });
 
     debug!("application is initialized and connected to activate signal");

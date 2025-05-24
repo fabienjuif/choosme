@@ -10,7 +10,7 @@ use crate::{config::Config, desktop_files::DesktopFileOpenerCommand};
 struct Daemon {
     cfg: Config,
     desktop_files_tx: Sender<DesktopFileOpenerCommand>,
-    toggle_ui_tx: Sender<()>,
+    toggle_ui_tx: Sender<String>,
 }
 
 impl Daemon {
@@ -38,7 +38,7 @@ impl Daemon {
         // fallbacking to UI
         info!("no matching desktop file found, falling back to UI");
         self.toggle_ui_tx
-            .send(())
+            .send(inputs.uri)
             .map_err(|e| anyhow::anyhow!("failed to send toggle UI command: {}", e))?;
 
         Ok(crate::dbus::OpenCmdOutputs {
@@ -51,7 +51,7 @@ pub fn register_dbus(
     application_name: &str,
     cfg: Config,
     desktop_files_tx: Sender<DesktopFileOpenerCommand>,
-    toggle_ui_tx: Sender<()>,
+    toggle_ui_tx: Sender<String>,
 ) -> Result<JoinHandle<()>> {
     debug!("registering dbus for application: {}", application_name);
 
