@@ -1,11 +1,13 @@
 mod config;
 mod daemon;
 mod dbus;
+mod desktop_files;
 mod ui;
 
 use anyhow::Result;
 use config::read_config;
 use daemon::register_dbus;
+use desktop_files::init_desktop_files;
 use std::env;
 use std::path::PathBuf;
 use tracing::level_filters::LevelFilter;
@@ -40,7 +42,8 @@ fn main() {
 
     // register dbus in daemon mode
     // TODO: parse with clap
-    register_dbus(&application_id, application_name, &cfg).unwrap_or_else(|e| {
+    let (jh, tx) = init_desktop_files();
+    register_dbus(&application_id, application_name, tx).unwrap_or_else(|e| {
         error!("failed to register dbus: {}", e);
         std::process::exit(1);
     });

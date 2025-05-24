@@ -1,11 +1,14 @@
+use std::sync::mpsc::Sender;
+
 use anyhow::Result;
 use dbus::{MethodErr, blocking::Connection};
 use dbus_crossroads::{Context, Crossroads};
 
-use crate::config::Config;
+use crate::desktop_files::DesktopFileCommand;
 
-#[derive(Default)]
-struct Daemon {}
+struct Daemon {
+    command_tx: Sender<DesktopFileCommand>,
+}
 
 impl Daemon {
     fn toggle(&self) -> Result<crate::dbus::ToggleCmdOutputs> {
@@ -17,10 +20,14 @@ impl Daemon {
     }
 }
 
-pub fn register_dbus(application_id: &str, application_name: &str, cfg: &Config) -> Result<()> {
+pub fn register_dbus(
+    application_id: &str,
+    application_name: &str,
+    command_tx: Sender<DesktopFileCommand>,
+) -> Result<()> {
     // preparing daemon (thread safe is necessary for dbus)
     // TODO:
-    let daemon = Daemon::default();
+    let daemon = Daemon { command_tx };
 
     // dbus descriptions
     let c = Connection::new_session()?;
