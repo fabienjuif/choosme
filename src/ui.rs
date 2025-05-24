@@ -18,7 +18,7 @@ pub fn start_ui(
 ) -> Application {
     let application = Application::builder()
         .application_id(application_id)
-        .flags(gio::ApplicationFlags::HANDLES_OPEN)
+        .flags(gio::ApplicationFlags::HANDLES_OPEN | gio::ApplicationFlags::NON_UNIQUE)
         .build();
 
     let shared_files: Rc<RefCell<Option<Vec<gio::File>>>> = Rc::new(RefCell::new(None));

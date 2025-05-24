@@ -9,7 +9,7 @@ use adw::glib::ExitCode;
 use anyhow::Result;
 use daemon::register_dbus;
 use desktop_files::run_desktop_file_opener;
-use gtk4::prelude::{GtkApplicationExt, GtkWindowExt};
+use gtk4::prelude::{GtkApplicationExt, GtkWindowExt, WidgetExt};
 use std::env;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -79,16 +79,22 @@ fn main() {
     );
 
     // only if NOT daemon mode NOR connected to a daemon
-    if !DAEMON_MODE {
-        ui_application.connect_window_added(|app, _| {
-            info!("OPENED");
-            if let Some(window) = app.active_window() {
+    ui_application.connect_window_added(|app, _| {
+        debug!("window added");
+        if let Some(window) = app.active_window() {
+            if !DAEMON_MODE {
                 window.present();
             } else {
-                error!("app opened but no active window found");
+                window.connect_close_request(move |win| {
+                    debug!("close request received, hiding window instead of closing");
+                    win.hide();
+                    gtk4::glib::Propagation::Stop
+                });
             }
-        });
-    }
+        } else {
+            error!("app opened but no active window found");
+        }
+    });
 
     info!("running application: {}", application_id);
     let exit_code = ui_application.run();
