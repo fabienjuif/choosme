@@ -1,15 +1,20 @@
 use crate::config::{Config, read_css_file};
-use adw::glib::ExitCode;
+use crate::desktop_files::{DesktopFileOpenerCommand, OpenParams, resolve_desktop_files};
 use adw::prelude::*;
 use adw::{ActionRow, Application};
-use anyhow::Result;
 use gtk4::gio::{self};
 use gtk4::{self as gtk, Align, Box, Image, Label, ListBox, Orientation, SelectionMode, Window};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::mpsc::Sender;
 use tracing::{debug, error, info, warn};
 
-pub fn start_ui(application_id: &str, application_name: &str, cfg: &Config) -> Result<()> {
+pub fn start_ui(
+    application_id: &str,
+    application_name: &str,
+    cfg: &Config,
+    desktop_files_tx: Sender<DesktopFileOpenerCommand>,
+) -> Application {
     let application = Application::builder()
         .application_id(application_id)
         .flags(gio::ApplicationFlags::HANDLES_OPEN)
@@ -17,37 +22,34 @@ pub fn start_ui(application_id: &str, application_name: &str, cfg: &Config) -> R
 
     let shared_files: Rc<RefCell<Option<Vec<gio::File>>>> = Rc::new(RefCell::new(None));
     // connect to the 'open' signal, which is triggered when the application is launched with URIs/files.
-    let shared_files_clone_open = Rc::clone(&shared_files);
-    let cfg_clone_open = cfg.clone();
+    let cfg_clone = cfg.clone();
+    let desktop_files_tx_clone = desktop_files_tx.clone();
     application.connect_open(move |app, files, hint| {
         if !hint.is_empty() {
             info!("xdg-open provided us an hint: {:?}", hint);
         }
-        debug!("app connected");
+        debug!("app opened");
         if let Some(file) = files.first() {
             debug!("received `open` signal with file: {:?}", file);
-            for desktop_file_config in cfg_clone_open.desktop_files.iter() {
-                match desktop_file_config.open_on_match(files, None) {
-                    Ok(true) => {
-                        app.quit();
-                        return;
-                    }
-                    Ok(false) => {
-                        // do nothing
-                    }
-                    Err(e) => {
-                        error!("failed on open_on_match: {}", e);
-                    }
+            if let Some(desktop_file) = cfg_clone.find_matching_desktop_file(file.uri().as_str()) {
+                info!("found matching desktop file: {:?}", desktop_file.id);
+                // send command to desktop file opener
+                if let Err(e) =
+                    desktop_files_tx_clone.send(DesktopFileOpenerCommand::Open(OpenParams {
+                        uris: files.iter().map(|f| f.uri().as_str().to_string()).collect(),
+                        desktop_file_id: desktop_file.id.clone(),
+                    }))
+                {
+                    error!("failed to send command to desktop file opener: {}", e);
                 }
+                app.quit();
             }
-            *shared_files_clone_open.borrow_mut() = Some(files.to_vec());
         }
-        // this ensures the window is shown even if the open signal is used.
-        app.activate();
     });
 
     let application_name_clone = application_name.to_string();
     let cfg_clone = cfg.clone();
+    let desktop_files_clone = desktop_files_tx.clone();
     application.connect_activate(move |app| {
         debug!("app activated");
 
@@ -79,14 +81,18 @@ pub fn start_ui(application_id: &str, application_name: &str, cfg: &Config) -> R
             .build();
 
         let mut items_added = 0;
-        for desktop_file_config in cfg_clone.desktop_files.iter() {
-            let app_info = desktop_file_config.app_info.clone();
+        let desktop_files = resolve_desktop_files(&cfg_clone);
+        for desktop_file_config in &cfg_clone.desktop_files{
+            let Some(desktop_file) = desktop_files.get(&desktop_file_config.id) else {
+                warn!("no desktop file found for id: {}", desktop_file_config.id);
+                continue;
+            };
             let row = ActionRow::builder()
                 .activatable(true)
-                .title(desktop_file_config.alias.as_ref().map_or(app_info.name(), |alias| alias.into()))
+                .title(desktop_file_config.alias.as_ref().map_or(desktop_file.name(), |alias| alias.into()))
                 .css_classes(vec![String::from("row")])
                 .build();
-            if let Some(icon) = app_info.icon() {
+            if let Some(icon) = desktop_file.icon() {
                     let icon_image = Image::builder()
                     .gicon(&icon)
                         .pixel_size(48)
@@ -95,16 +101,24 @@ pub fn start_ui(application_id: &str, application_name: &str, cfg: &Config) -> R
                     row.add_prefix(&icon_image);
             }
 
-            let name_for_closure = app_info.name().clone();
+            let desktop_id_for_closure = desktop_file_config.id.clone();
+            let desktop_files_tx_for_closure = desktop_files_clone.clone();
             let shared_files_clone_active = Rc::clone(&shared_files);
             let app_for_closure = app.clone();
             row.connect_activated(move |_| {
                 let files = shared_files_clone_active.borrow().clone().unwrap_or_default();
-                if let Err(e) = app_info.launch(files.as_slice(), None::<&gio::AppLaunchContext>) {
-                    // TODO: dialog
-                    error!("failed to launch '{}' via GIO: {}", name_for_closure, e);
+                if let Err(e) = desktop_files_tx_for_closure.send(DesktopFileOpenerCommand::Open(
+                    OpenParams {
+                        uris: files.iter().map(|f| f.uri().as_str().to_string()).collect(),
+                        desktop_file_id: desktop_id_for_closure.clone(),
+                    },
+                )) {
+                    error!("failed to send command to desktop file opener: {}", e);
                 }
-                app_for_closure.quit();
+                info!("after sending command, quitting the app");
+                app_for_closure.windows()
+                    .iter()
+                    .for_each(|window| window.hide());
             });
             list_box.append(&row);
             items_added += 1;
@@ -165,6 +179,7 @@ pub fn start_ui(application_id: &str, application_name: &str, cfg: &Config) -> R
 
         debug!("window is connected to key controller");
 
+
         // floating window initially and then become resizable in WMs like Sway.
         app.connect_active_window_notify(|app| {
             if let Some(active_window) = app.active_window() {
@@ -193,13 +208,5 @@ pub fn start_ui(application_id: &str, application_name: &str, cfg: &Config) -> R
     });
 
     debug!("application is initialized and connected to activate signal");
-
-    let exit_code = application.run();
-    if exit_code != ExitCode::SUCCESS {
-        return Err(anyhow::anyhow!(
-            "application exited with code {:?}",
-            exit_code
-        ));
-    }
-    Ok(())
+    application
 }

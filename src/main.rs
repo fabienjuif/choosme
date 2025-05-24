@@ -4,14 +4,16 @@ mod dbus;
 mod desktop_files;
 mod ui;
 
+use adw::gio::prelude::ApplicationExtManual;
+use adw::glib::ExitCode;
 use anyhow::Result;
-use config::read_config;
 use daemon::register_dbus;
-use desktop_files::init_desktop_files;
+use desktop_files::run_desktop_file_opener;
 use std::env;
 use std::path::PathBuf;
+use std::sync::mpsc;
 use tracing::level_filters::LevelFilter;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
@@ -21,7 +23,11 @@ use xdg::BaseDirectories;
 fn main() {
     debug!("start main");
     let application_name = env!("CARGO_PKG_NAME");
-    let application_id = format!("juif.fabien.{}", application_name);
+    // I have to make a different name otherwise it collides with daemon mode.
+    // Which makes me think I could reuse the ui application to register dbus methods maybe?
+    //     ui_application.dbus_connection()
+
+    let application_id = format!("juif.fabien.ui.{}", application_name);
 
     // we keep the guard around for the duration of the application
     // to ensure that all logs are flushed before the application exits.
@@ -34,26 +40,91 @@ fn main() {
     };
     debug!("logging is initialized");
 
-    let cfg = read_config().unwrap_or_else(|e| {
-        error!("failed to read config: {}", e);
-        std::process::exit(1);
-    });
-    debug!("config is parsed");
+    // read config
+    let cfg = match config::Config::read() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            error!("failed to read config file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let (toggle_ui_tx, ui_rx) = mpsc::channel::<()>();
+    let (jh_dekstop_files, desktop_files_tx) = run_desktop_file_opener(cfg.clone());
 
     // register dbus in daemon mode
-    // TODO: parse with clap
-    let (jh, tx) = init_desktop_files();
-    register_dbus(&application_id, application_name, tx).unwrap_or_else(|e| {
+    // TODO: parse with clap if we really need it
+    let jh_dbus = register_dbus(
+        application_name,
+        cfg.clone(),
+        desktop_files_tx.clone(),
+        toggle_ui_tx,
+    )
+    .unwrap_or_else(|e| {
         error!("failed to register dbus: {}", e);
         std::process::exit(1);
     });
 
-    start_ui(&application_id, application_name, &cfg)
-        .map_err(|e| {
-            error!("ui failed: {}", e);
-            std::process::exit(1);
-        })
-        .unwrap();
+    // start the ui
+    // TODO: only if NOT a client mode, aka no daemon mode, not able to contact the daemon
+    let ui_application = start_ui(&application_id, application_name, &cfg, desktop_files_tx);
+    // let jh = std::thread::spawn(move || {
+    //     loop {
+    //         match ui_rx.recv() {
+    //             Ok(_) => {
+    //                 info!("received toggle UI command");
+    //                 ui_application.windows().iter().for_each(|w| {
+    //                     if w.is_visible() {
+    //                         w.hide();
+    //                     } else {
+    //                         w.show();
+    //                     }
+    //                 });
+    //             }
+    //             Err(e) => {
+    //                 error!("error receiving toggle UI command: {}", e);
+    //                 break;
+    //             }
+    //         }
+    //     }
+    // });
+    // ui_application.connect_startup(move |app| {
+    //     debug!("application is started");
+
+    //     loop {
+    //         match ui_rx.recv() {
+    //             Ok(_) => {
+    //                 info!("received toggle UI command");
+    //                 app.windows().iter().for_each(|w| {
+    //                     if w.is_visible() {
+    //                         w.hide();
+    //                     } else {
+    //                         w.show();
+    //                     }
+    //                 });
+    //             }
+    //             Err(e) => {
+    //                 error!("error receiving toggle UI command: {}", e);
+    //                 break;
+    //             }
+    //         }
+    //     }
+    // });
+
+    info!("running application: {}", application_id);
+    let exit_code = ui_application.run();
+    if exit_code != ExitCode::SUCCESS {
+        error!("UI exited with code {:?}", exit_code);
+    }
+
+    // waiting threads
+    // TODO: use tokio maybe later?
+    jh_dekstop_files.join().unwrap_or_else(|e| {
+        error!("desktop file opener thread failed: {:?}", e);
+    });
+    jh_dbus.join().unwrap_or_else(|e| {
+        error!("dbus thread failed: {:?}", e);
+    });
 }
 
 // the returned guard must be held for the duration you want logging to occur.

@@ -1,30 +1,46 @@
 pub const DEST: &str = "juif.fabien.choosme";
 
-// dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Toggle
+// dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Open string:"http://example.com"
 
-pub const TOGGLE_METHOD: &str = "Toggle";
-pub const TOGGLE_METHOD_INPUTS: () = ();
-pub const TOGGLE_METHOD_OUTPUTS: (&str,) = ("status",);
-
-#[derive(Debug)]
-pub struct ToggleCmdInputs {}
+pub const OPEN_METHOD: &str = "Open";
+pub const OPEN_METHOD_INPUTS: (&str,) = ("uri",);
+pub const OPEN_METHOD_OUTPUTS: (&str,) = ("status",);
 
 #[derive(Debug)]
-pub struct ToggleCmdOutputs {
-    pub status: ToggleCmdOutputsStatus,
+pub struct OpenCmdInputs {
+    pub uri: String,
+}
+
+impl OpenCmdInputs {
+    pub fn from_dbus_input(input: (String,)) -> Self {
+        OpenCmdInputs { uri: input.0 }
+    }
+}
+
+#[derive(Debug)]
+pub struct OpenCmdOutputs {
+    pub status: OpenCmdOutputsStatus,
+}
+
+impl OpenCmdOutputs {
+    pub fn to_dbus_output(&self) -> (String,) {
+        (self.status.clone().into(),)
+    }
 }
 
 #[derive(Debug, Clone)]
-pub enum ToggleCmdOutputsStatus {
-    Show,
-    Hide,
+pub enum OpenCmdOutputsStatus {
+    /// No application was launched, the UI was used instead.
+    Fallbacked,
+    /// An application was launched.
+    Launched,
 }
 
-impl From<ToggleCmdOutputsStatus> for String {
-    fn from(status: ToggleCmdOutputsStatus) -> Self {
+impl From<OpenCmdOutputsStatus> for String {
+    fn from(status: OpenCmdOutputsStatus) -> Self {
         match status {
-            ToggleCmdOutputsStatus::Show => "show".to_string(),
-            ToggleCmdOutputsStatus::Hide => "hide".to_string(),
+            OpenCmdOutputsStatus::Fallbacked => "fallbacked".to_string(),
+            OpenCmdOutputsStatus::Launched => "launched".to_string(),
         }
     }
 }
@@ -35,14 +51,13 @@ pub enum ToggleStatusParseError {
     EmptyString,
 }
 
-impl TryFrom<String> for ToggleCmdOutputsStatus {
+impl TryFrom<String> for OpenCmdOutputsStatus {
     type Error = ToggleStatusParseError;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
         match s.as_str() {
-            // Use as_str() to match against string slices
-            "show" => Ok(ToggleCmdOutputsStatus::Show),
-            "hide" => Ok(ToggleCmdOutputsStatus::Hide),
+            "fallbacked" => Ok(OpenCmdOutputsStatus::Fallbacked),
+            "launched" => Ok(OpenCmdOutputsStatus::Launched),
             _ => {
                 if s.is_empty() {
                     return Err(ToggleStatusParseError::EmptyString);
@@ -50,11 +65,5 @@ impl TryFrom<String> for ToggleCmdOutputsStatus {
                 Err(ToggleStatusParseError::UnknownStatus(s))
             }
         }
-    }
-}
-
-impl ToggleCmdOutputs {
-    pub fn to_dbus_output(&self) -> String {
-        self.status.clone().into()
     }
 }
