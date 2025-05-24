@@ -1,8 +1,11 @@
 mod config;
+mod daemon;
+mod dbus;
 mod ui;
 
 use anyhow::Result;
 use config::read_config;
+use daemon::register_dbus;
 use std::env;
 use std::path::PathBuf;
 use tracing::level_filters::LevelFilter;
@@ -34,6 +37,13 @@ fn main() {
         std::process::exit(1);
     });
     debug!("config is parsed");
+
+    // register dbus in daemon mode
+    // TODO: parse with clap
+    register_dbus(&application_id, application_name, &cfg).unwrap_or_else(|e| {
+        error!("failed to register dbus: {}", e);
+        std::process::exit(1);
+    });
 
     start_ui(&application_id, application_name, &cfg)
         .map_err(|e| {

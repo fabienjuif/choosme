@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 adw = { version = "0.7.2", package = "libadwaita", features = ["v1_5"] }
 anyhow = "1.0.98"
+dbus = "0.9.7"
+dbus-crossroads = "0.5.2"
 dirs = "6.0.0"
 gdk4 = "0.9.6"
 gtk4 = "0.9.6"
