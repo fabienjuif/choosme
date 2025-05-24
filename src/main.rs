@@ -5,10 +5,12 @@ mod desktop_files;
 mod ui;
 
 use adw::gio::prelude::ApplicationExtManual;
-use adw::glib::ExitCode;
+use adw::glib::{self, ExitCode};
 use anyhow::Result;
 use daemon::register_dbus;
 use desktop_files::run_desktop_file_opener;
+use glib::ControlFlow;
+use gtk4::prelude::{GtkApplicationExt, WidgetExt};
 use std::env;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -49,7 +51,7 @@ fn main() {
         }
     };
 
-    let (toggle_ui_tx, ui_rx) = mpsc::channel::<()>();
+    let (ui_tx, ui_rx) = mpsc::channel::<()>();
     let (jh_dekstop_files, desktop_files_tx) = run_desktop_file_opener(cfg.clone());
 
     // register dbus in daemon mode
@@ -58,7 +60,7 @@ fn main() {
         application_name,
         cfg.clone(),
         desktop_files_tx.clone(),
-        toggle_ui_tx,
+        ui_tx,
     )
     .unwrap_or_else(|e| {
         error!("failed to register dbus: {}", e);
@@ -68,48 +70,31 @@ fn main() {
     // start the ui
     // TODO: only if NOT a client mode, aka no daemon mode, not able to contact the daemon
     let ui_application = start_ui(&application_id, application_name, &cfg, desktop_files_tx);
-    // let jh = std::thread::spawn(move || {
-    //     loop {
-    //         match ui_rx.recv() {
-    //             Ok(_) => {
-    //                 info!("received toggle UI command");
-    //                 ui_application.windows().iter().for_each(|w| {
-    //                     if w.is_visible() {
-    //                         w.hide();
-    //                     } else {
-    //                         w.show();
-    //                     }
-    //                 });
-    //             }
-    //             Err(e) => {
-    //                 error!("error receiving toggle UI command: {}", e);
-    //                 break;
-    //             }
-    //         }
-    //     }
-    // });
-    // ui_application.connect_startup(move |app| {
-    //     debug!("application is started");
 
-    //     loop {
-    //         match ui_rx.recv() {
-    //             Ok(_) => {
-    //                 info!("received toggle UI command");
-    //                 app.windows().iter().for_each(|w| {
-    //                     if w.is_visible() {
-    //                         w.hide();
-    //                     } else {
-    //                         w.show();
-    //                     }
-    //                 });
-    //             }
-    //             Err(e) => {
-    //                 error!("error receiving toggle UI command: {}", e);
-    //                 break;
-    //             }
-    //         }
-    //     }
-    // });
+    let ui_app_clone = ui_application.clone();
+    glib::source::idle_add_local(move || {
+        match ui_rx.try_recv() {
+            Ok(_) => {
+                if let Some(win) = ui_app_clone.active_window() {
+                    if win.is_visible() {
+                        win.hide();
+                    } else {
+                        win.show();
+                    }
+                } else {
+                    error!("no active window found");
+                }
+            }
+            Err(mpsc::TryRecvError::Empty) => {
+                // nothing to do, continue looping
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                info!("ui_rx disconnected");
+                return ControlFlow::Break;
+            }
+        }
+        ControlFlow::Continue
+    });
 
     info!("running application: {}", application_id);
     let exit_code = ui_application.run();
