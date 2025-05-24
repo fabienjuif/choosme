@@ -30,7 +30,7 @@ fn main() {
     // Which makes me think I could reuse the ui application to register dbus methods maybe?
     //     ui_application.dbus_connection()
 
-    let application_id = format!("juif.fabien.ui.{}", application_name);
+    let application_id = format!("juif.fabien.client.{}", application_name);
 
     // we keep the guard around for the duration of the application
     // to ensure that all logs are flushed before the application exits.
