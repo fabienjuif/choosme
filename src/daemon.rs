@@ -27,6 +27,7 @@ impl Daemon {
     fn open(&self, inputs: crate::dbus::OpenCmdInputs) -> Result<crate::dbus::OpenCmdOutputs> {
         debug!("open command received with inputs: {:?}", inputs);
 
+        // try to find a matching desktop file
         if let Some(desktop_file) = self.cfg.find_matching_desktop_file(&inputs.uri) {
             info!("found matching desktop file: {:?}", desktop_file.id);
 
@@ -43,6 +44,32 @@ impl Daemon {
             return Ok(crate::dbus::OpenCmdOutputs {
                 status: crate::dbus::OpenCmdOutputsStatus::Launched,
             });
+        }
+
+        // fallback to default application if set
+        if let Some(default_id) = &self.default_application_id {
+            if let Some(desktop_file) = self
+                .cfg
+                .desktop_files
+                .iter()
+                .find(|df| &df.id == default_id)
+            {
+                info!("using default application: {:?}", desktop_file.id);
+
+                // send command to desktop file opener
+                self.desktop_files_tx
+                    .send(DesktopFileOpenerCommand::Open(
+                        crate::desktop_files::OpenParams {
+                            uris: vec![inputs.uri],
+                            desktop_file_id: desktop_file.id.clone(),
+                        },
+                    ))
+                    .map_err(|e| anyhow::anyhow!("failed to send command: {}", e))?;
+
+                return Ok(crate::dbus::OpenCmdOutputs {
+                    status: crate::dbus::OpenCmdOutputsStatus::Launched,
+                });
+            }
         }
 
         // fallbacking to UI
@@ -72,9 +99,7 @@ impl Daemon {
                 .map(|df| StatusCmdOutputApplication {
                     id: df.id.clone(),
                     name: df.alias.clone().unwrap_or_else(|| df.id.clone()),
-                    is_default: self
-                        .default_application_id
-                        .as_ref() == Some(&df.id),
+                    is_default: self.default_application_id.as_ref() == Some(&df.id),
                     icon: resolved
                         .get(&df.id)
                         .and_then(|d| {
