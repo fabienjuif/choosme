@@ -13,7 +13,7 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use tracing::level_filters::LevelFilter;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
@@ -63,6 +63,32 @@ fn main() {
     };
 
     debug!("start main: daemon_mode: {}, uri: {:?}", daemon_mode, uri);
+
+    // if no daemon mode, we try to connect to it
+    // and if we fail we fallback with local resolution (and eventually start the UI onf fallback)
+    if !daemon_mode {
+        if let Some(uri) = &uri {
+            if let Ok(dbus_client) = dbus::DBUSClient::new() {
+                debug!("connected to dbus in client mode");
+                match dbus_client.open(uri) {
+                    Ok(outputs) => {
+                        info!("open command executed successfully: {:?}", outputs);
+                        std::process::exit(0);
+                    }
+                    Err(e) => {
+                        error!(
+                            "failed to execute open command: {}, fallbacking to standalone mode",
+                            e
+                        );
+                    }
+                }
+            } else {
+                warn!("failed to create dbus client, using standalone mode");
+            }
+        }
+    }
+
+    // if we are here, it means we are either in daemon mode or we unsucessfully tried to connect to dbus
 
     // read config
     let cfg = match config::Config::read() {
