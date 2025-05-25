@@ -48,8 +48,9 @@ fn run() -> Result<()> {
             set_default,
             unset_default,
             status,
+            kill,
         }) => {
-            if !status && !unset_default && set_default.is_none() {
+            if !status && !unset_default && set_default.is_none() && !kill {
                 daemon_mode = true;
             } else {
                 // in all other cases we need a dbus client
@@ -57,12 +58,16 @@ fn run() -> Result<()> {
                     .map_err(|e| format_err!("on DBUSClient::new(): {e}"))?;
 
                 if status {
-                    // status command, we just print the current default application
                     let output = dbus_client
                         .status()
                         .map_err(|e| format_err!("on dbus_client.status(): {e}"))?;
                     serde_json::to_writer(std::io::stdout(), &output)
                         .expect("failed to write status command output");
+                    return Ok(());
+                } else if kill {
+                    let _ = dbus_client
+                        .kill()
+                        .map_err(|e| format_err!("on dbus_client.kill(): {e}"))?;
                     return Ok(());
                 }
 

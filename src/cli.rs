@@ -24,6 +24,10 @@ pub enum Commands {
         /// Print status of the daemon
         #[arg(long, required = false)]
         status: bool,
+
+        /// Kill the daemon
+        #[arg(long, required = false)]
+        kill: bool,
     },
 }
 
