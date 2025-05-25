@@ -101,7 +101,6 @@ exec {
 - [ ] Be able to add or remove apps from the UI
 - [ ] From the UI, have a drop down menu (hidden by default) where are presented the full URL (you can modify the URL to edit it) and the dns only, click on one of both, then you choose your app, it will be registred as your default app for this prefix
 - [ ] Open window near cursor in Sway
-- [ ] Speed up start (maybe doing a daemon?)
 - [ ] Enter opens the last used browser
 - [ ] Change configuration logic to be
 

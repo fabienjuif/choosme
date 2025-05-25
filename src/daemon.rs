@@ -1,6 +1,7 @@
 use std::{
     sync::mpsc::{Receiver, Sender},
-    thread::JoinHandle,
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
 use adw::gio::prelude::{AppInfoExt, IconExt};
@@ -83,6 +84,18 @@ impl Daemon {
                 .collect(),
         })
     }
+
+    fn kill(&mut self, inputs: crate::dbus::KillCmdInputs) -> Result<crate::dbus::KillCmdOutputs> {
+        debug!("kill command received with inputs: {:?}", inputs);
+
+        // TODO: safer way of doing it
+        thread::spawn(|| {
+            thread::sleep(Duration::from_millis(100));
+            std::process::exit(0);
+        });
+
+        Ok(crate::dbus::KillCmdOutputs {})
+    }
 }
 
 pub fn register_dbus(
@@ -133,6 +146,20 @@ pub fn register_dbus(
                     .map_err(|e| MethodErr::failed(&e.to_string()))?
                     .to_dbus_output();
                 Ok(output)
+            },
+        );
+
+        b.method(
+            crate::dbus::KILL_METHOD,
+            crate::dbus::KILL_METHOD_INPUTS,
+            crate::dbus::KILL_METHOD_OUTPUTS,
+            move |_: &mut Context, daemon: &mut Daemon, params: ()| {
+                let inputs = crate::dbus::KillCmdInputs::from_dbus_input(params);
+                daemon
+                    .kill(inputs)
+                    .map_err(|e| MethodErr::failed(&e.to_string()))?
+                    .to_dbus_output();
+                Ok(())
             },
         );
     });

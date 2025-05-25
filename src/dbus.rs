@@ -18,6 +18,12 @@ pub const STATUS_METHOD: &str = "Status";
 pub const STATUS_METHOD_INPUTS: () = ();
 pub const STATUS_METHOD_OUTPUTS: (&str, &str) = ("applications_ids", "default_application");
 
+// dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Kill
+
+pub const KILL_METHOD: &str = "Kill";
+pub const KILL_METHOD_INPUTS: () = ();
+pub const KILL_METHOD_OUTPUTS: () = ();
+
 #[derive(Debug)]
 pub struct OpenCmdInputs {
     pub uri: String,
@@ -142,6 +148,34 @@ impl StatusCmdOutputs {
     }
 }
 
+#[derive(Debug)]
+pub struct KillCmdInputs {}
+
+impl KillCmdInputs {
+    pub fn from_dbus_input(_input: ()) -> Self {
+        Self {}
+    }
+
+    #[allow(clippy::unused_unit)]
+    pub fn to_dbus_input(&self) -> () {
+        ()
+    }
+}
+
+#[derive(Debug)]
+pub struct KillCmdOutputs {}
+
+impl KillCmdOutputs {
+    #[allow(clippy::unused_unit)]
+    pub fn to_dbus_output(&self) -> () {
+        ()
+    }
+
+    pub fn from_dbus_output(_output: ()) -> Result<Self, ToggleStatusParseError> {
+        Ok(Self {})
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusCmdOutputApplication {
     pub id: String,
@@ -186,6 +220,18 @@ impl DBUSClient {
             .method_call(DEST, STATUS_METHOD, msg.to_dbus_input())?;
         let out = StatusCmdOutputs::from_dbus_output(result)
             .expect("StatusCmdOutputs::from_dbus_output should not fail");
+        Ok(out)
+    }
+
+    pub fn kill(&self) -> Result<KillCmdOutputs> {
+        let msg = KillCmdInputs {};
+        #[allow(clippy::let_unit_value)]
+        let result = self
+            .get_proxy()
+            .method_call(DEST, KILL_METHOD, msg.to_dbus_input())?;
+        let out = KillCmdOutputs::from_dbus_output(result)
+            .map_err(|e| dbus::Error::new_failed(&e.to_string()))?;
+
         Ok(out)
     }
 }
