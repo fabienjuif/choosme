@@ -16,7 +16,7 @@ pub const OPEN_METHOD_OUTPUTS: (&str,) = ("status",);
 
 pub const STATUS_METHOD: &str = "Status";
 pub const STATUS_METHOD_INPUTS: () = ();
-pub const STATUS_METHOD_OUTPUTS: (&str, &str) = ("applications_ids", "default_application");
+pub const STATUS_METHOD_OUTPUTS: (&str,) = ("applications",);
 
 // dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Kill
 
@@ -124,32 +124,36 @@ impl StatusCmdInputs {
 #[derive(Debug, Serialize)]
 pub struct StatusCmdOutputs {
     pub applications: Vec<StatusCmdOutputApplication>,
-    pub default_application_id: Option<String>,
 }
 
 impl StatusCmdOutputs {
-    pub fn to_dbus_output(&self) -> (Vec<(String, String, String)>, String) {
-        (
-            self.applications
-                .iter()
-                .map(|app| (app.id.clone(), app.name.clone(), app.icon.clone()))
-                .collect(),
-            self.default_application_id.clone().unwrap_or_default(),
-        )
+    pub fn to_dbus_output(&self) -> (Vec<(String, String, String, bool)>,) {
+        (self
+            .applications
+            .iter()
+            .map(|app| {
+                (
+                    app.id.clone(),
+                    app.name.clone(),
+                    app.icon.clone(),
+                    app.is_default,
+                )
+            })
+            .collect(),)
     }
 
-    pub fn from_dbus_output(output: (Vec<(String, String, String)>, String)) -> Result<Self, ()> {
+    pub fn from_dbus_output(output: (Vec<(String, String, String, bool)>,)) -> Result<Self, ()> {
         Ok(StatusCmdOutputs {
             applications: output
                 .0
                 .into_iter()
-                .map(|(id, name, icon)| StatusCmdOutputApplication { id, name, icon })
+                .map(|(id, name, icon, is_default)| StatusCmdOutputApplication {
+                    id,
+                    name,
+                    icon,
+                    is_default,
+                })
                 .collect(),
-            default_application_id: if output.1.is_empty() {
-                None
-            } else {
-                Some(output.1)
-            },
         })
     }
 }
@@ -187,6 +191,7 @@ pub struct StatusCmdOutputApplication {
     pub id: String,
     pub name: String,
     pub icon: String,
+    pub is_default: bool,
 }
 
 #[derive(Debug)]

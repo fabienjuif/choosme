@@ -65,7 +65,6 @@ impl Daemon {
         let resolved = resolve_desktop_files(&self.cfg);
 
         Ok(crate::dbus::StatusCmdOutputs {
-            default_application_id: self.default_application_id.clone(),
             applications: self
                 .cfg
                 .desktop_files
@@ -73,6 +72,9 @@ impl Daemon {
                 .map(|df| StatusCmdOutputApplication {
                     id: df.id.clone(),
                     name: df.alias.clone().unwrap_or_else(|| df.id.clone()),
+                    is_default: self
+                        .default_application_id
+                        .as_ref() == Some(&df.id),
                     icon: resolved
                         .get(&df.id)
                         .and_then(|d| {
