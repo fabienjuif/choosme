@@ -6,6 +6,7 @@
 
    - libgtk-4-dev
    - libadwaita-1-dev
+   - libdbus-1-dev
 
 2. Install rust: https://www.rust-lang.org/tools/install
 3. Compile and install the app:

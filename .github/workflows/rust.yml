@@ -7,7 +7,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
-on: [push, pull_request]
+on: [push]
 
 jobs:
   quality:
@@ -31,7 +31,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - name: Install Dependencies
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libgtk-4-dev libadwaita-1-dev
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libgtk-4-dev libadwaita-1-dev libdbus-1-dev
       - name: Run cargo fmt
         run: cargo fmt --all -- --check
       - name: Run clippy
