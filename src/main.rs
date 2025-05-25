@@ -58,6 +58,7 @@ fn run() -> Result<()> {
                     .map_err(|e| format_err!("on DBUSClient::new(): {e}"))?;
 
                 if status {
+                    debug!("sending status command");
                     let output = dbus_client
                         .status()
                         .map_err(|e| format_err!("on dbus_client.status(): {e}"))?;
@@ -65,9 +66,22 @@ fn run() -> Result<()> {
                         .expect("failed to write status command output");
                     return Ok(());
                 } else if kill {
+                    debug!("sending kill command");
                     let _ = dbus_client
                         .kill()
                         .map_err(|e| format_err!("on dbus_client.kill(): {e}"))?;
+                    return Ok(());
+                } else if let Some(index) = set_default {
+                    debug!("sending set_default command with index: {}", index);
+                    let _ = dbus_client
+                        .set_default(index as i64)
+                        .map_err(|e| format_err!("on dbus_client.set_default(): {e}"))?;
+                    return Ok(());
+                } else if unset_default {
+                    debug!("sending unset_default command");
+                    let _ = dbus_client
+                        .set_default(-1)
+                        .map_err(|e| format_err!("on dbus_client.set_default(-1): {e}"))?;
                     return Ok(());
                 }
 

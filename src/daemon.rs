@@ -96,6 +96,28 @@ impl Daemon {
 
         Ok(crate::dbus::KillCmdOutputs {})
     }
+
+    fn set_default(
+        &mut self,
+        inputs: crate::dbus::SetDefaultCmdInputs,
+    ) -> Result<crate::dbus::SetDefaultCmdOutputs> {
+        debug!("set_default command received with inputs: {:?}", inputs);
+
+        if inputs.index < 0 {
+            self.default_application_id = None;
+            return Ok(crate::dbus::SetDefaultCmdOutputs {});
+        }
+
+        let desktop_file = self
+            .cfg
+            .desktop_files
+            .get(inputs.index as usize)
+            .ok_or_else(|| anyhow::anyhow!("invalid index: {}", inputs.index))?;
+
+        self.default_application_id = Some(desktop_file.id.clone());
+
+        Ok(crate::dbus::SetDefaultCmdOutputs {})
+    }
 }
 
 pub fn register_dbus(
@@ -157,6 +179,20 @@ pub fn register_dbus(
                 let inputs = crate::dbus::KillCmdInputs::from_dbus_input(params);
                 daemon
                     .kill(inputs)
+                    .map_err(|e| MethodErr::failed(&e.to_string()))?
+                    .to_dbus_output();
+                Ok(())
+            },
+        );
+
+        b.method(
+            crate::dbus::SET_DEFAULT_METHOD,
+            crate::dbus::SET_DEFAULT_METHOD_INPUTS,
+            crate::dbus::SET_DEFAULT_METHOD_OUTPUTS,
+            move |_: &mut Context, daemon: &mut Daemon, params: (i64,)| {
+                let inputs = crate::dbus::SetDefaultCmdInputs::from_dbus_input(params);
+                daemon
+                    .set_default(inputs)
                     .map_err(|e| MethodErr::failed(&e.to_string()))?
                     .to_dbus_output();
                 Ok(())

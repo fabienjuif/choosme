@@ -24,6 +24,12 @@ pub const KILL_METHOD: &str = "Kill";
 pub const KILL_METHOD_INPUTS: () = ();
 pub const KILL_METHOD_OUTPUTS: () = ();
 
+// dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.SetDefault int64:1
+
+pub const SET_DEFAULT_METHOD: &str = "SetDefault";
+pub const SET_DEFAULT_METHOD_INPUTS: (&str,) = ("index",);
+pub const SET_DEFAULT_METHOD_OUTPUTS: () = ();
+
 #[derive(Debug)]
 pub struct OpenCmdInputs {
     pub uri: String,
@@ -171,7 +177,7 @@ impl KillCmdOutputs {
         ()
     }
 
-    pub fn from_dbus_output(_output: ()) -> Result<Self, ToggleStatusParseError> {
+    pub fn from_dbus_output(_output: ()) -> Result<Self> {
         Ok(Self {})
     }
 }
@@ -181,6 +187,36 @@ pub struct StatusCmdOutputApplication {
     pub id: String,
     pub name: String,
     pub icon: String,
+}
+
+#[derive(Debug)]
+pub struct SetDefaultCmdInputs {
+    pub index: i64,
+}
+
+impl SetDefaultCmdInputs {
+    pub fn from_dbus_input(input: (i64,)) -> Self {
+        Self { index: input.0 }
+    }
+
+    #[allow(clippy::unused_unit)]
+    pub fn to_dbus_input(&self) -> (i64,) {
+        (self.index,)
+    }
+}
+
+#[derive(Debug)]
+pub struct SetDefaultCmdOutputs {}
+
+impl SetDefaultCmdOutputs {
+    #[allow(clippy::unused_unit)]
+    pub fn to_dbus_output(&self) -> () {
+        ()
+    }
+
+    pub fn from_dbus_output(_output: ()) -> Result<Self> {
+        Ok(Self {})
+    }
 }
 
 pub struct DBUSClient {
@@ -231,7 +267,17 @@ impl DBUSClient {
             .method_call(DEST, KILL_METHOD, msg.to_dbus_input())?;
         let out = KillCmdOutputs::from_dbus_output(result)
             .map_err(|e| dbus::Error::new_failed(&e.to_string()))?;
+        Ok(out)
+    }
 
+    pub fn set_default(&self, index: i64) -> Result<SetDefaultCmdOutputs> {
+        let msg = SetDefaultCmdInputs { index };
+        #[allow(clippy::let_unit_value)]
+        let result = self
+            .get_proxy()
+            .method_call(DEST, SET_DEFAULT_METHOD, msg.to_dbus_input())?;
+        let out = SetDefaultCmdOutputs::from_dbus_output(result)
+            .map_err(|e| dbus::Error::new_failed(&e.to_string()))?;
         Ok(out)
     }
 }
