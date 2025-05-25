@@ -11,6 +11,12 @@ pub const OPEN_METHOD: &str = "Open";
 pub const OPEN_METHOD_INPUTS: (&str,) = ("uri",);
 pub const OPEN_METHOD_OUTPUTS: (&str,) = ("status",);
 
+// dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Status
+
+pub const STATUS_METHOD: &str = "Status";
+pub const STATUS_METHOD_INPUTS: () = ();
+pub const STATUS_METHOD_OUTPUTS: (&str, &str) = ("applications_ids", "default_application");
+
 #[derive(Debug)]
 pub struct OpenCmdInputs {
     pub uri: String,
@@ -91,6 +97,57 @@ impl TryFrom<String> for OpenCmdOutputsStatus {
     }
 }
 
+#[derive(Debug)]
+pub struct StatusCmdInputs {}
+
+impl StatusCmdInputs {
+    pub fn from_dbus_input(_input: ()) -> Self {
+        StatusCmdInputs {}
+    }
+    
+    pub fn to_dbus_input(&self) {}
+}
+
+#[derive(Debug)]
+pub struct StatusCmdOutputs {
+    pub applications: Vec<StatusCmdOutputApplication>,
+    pub default_application_id: Option<String>,
+}
+
+impl StatusCmdOutputs {
+    pub fn to_dbus_output(&self) -> (Vec<(String, String, String)>, String) {
+        (
+            self.applications
+                .iter()
+                .map(|app| (app.id.clone(), app.name.clone(), app.icon.clone()))
+                .collect(),
+            self.default_application_id.clone().unwrap_or_default(),
+        )
+    }
+
+    pub fn from_dbus_output(output: (Vec<(String, String, String)>, String)) -> Result<Self, ()> {
+        Ok(StatusCmdOutputs {
+            applications: output
+                .0
+                .into_iter()
+                .map(|(id, name, icon)| StatusCmdOutputApplication { id, name, icon })
+                .collect(),
+            default_application_id: if output.1.is_empty() {
+                None
+            } else {
+                Some(output.1)
+            },
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StatusCmdOutputApplication {
+    pub id: String,
+    pub name: String,
+    pub icon: String,
+}
+
 pub struct DBUSClient {
     // We remove the proxy from the struct because it borrows from the connection.
     // Instead, we'll create proxies on demand or pass the connection around.
@@ -118,6 +175,16 @@ impl DBUSClient {
         let out = OpenCmdOutputs::from_dbus_output(result)
             .map_err(|e| dbus::Error::new_failed(&e.to_string()))?;
 
+        Ok(out)
+    }
+
+    pub fn status(&self) -> Result<StatusCmdOutputs> {
+        let msg = StatusCmdInputs {};
+        let result = self
+            .get_proxy()
+            .method_call(DEST, STATUS_METHOD, msg.to_dbus_input())?;
+        let out = StatusCmdOutputs::from_dbus_output(result)
+            .expect("StatusCmdOutputs::from_dbus_output should not fail");
         Ok(out)
     }
 }
