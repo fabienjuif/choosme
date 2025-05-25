@@ -1,9 +1,12 @@
-use std::{sync::mpsc::Sender, thread::JoinHandle};
+use std::{
+    sync::mpsc::{Receiver, Sender},
+    thread::JoinHandle,
+};
 
 use anyhow::Result;
-use dbus::{MethodErr, blocking::Connection};
+use dbus::{MethodErr, blocking::Connection, channel::MatchingReceiver};
 use dbus_crossroads::{Context, Crossroads};
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use crate::{config::Config, desktop_files::DesktopFileOpenerCommand};
 
@@ -52,6 +55,7 @@ pub fn register_dbus(
     cfg: Config,
     desktop_files_tx: Sender<DesktopFileOpenerCommand>,
     toggle_ui_tx: Sender<String>,
+    shutdown_rx: Receiver<()>,
 ) -> Result<JoinHandle<()>> {
     debug!("registering dbus for application: {}", application_name);
 
@@ -84,15 +88,40 @@ pub fn register_dbus(
 
         // TODO: other methods
     });
-
-    // starting dbus server
     cr.insert("/", &[iface_token], daemon);
 
+    // starting dbus server
     let jh = std::thread::spawn(move || {
-        cr.serve(&c).unwrap_or_else(|e| {
-            error!("dbus server error: {}", e);
-            std::process::exit(1);
-        });
+        c.start_receive(
+            dbus::message::MatchRule::new_method_call(),
+            Box::new(move |msg, conn| {
+                cr.handle_message(msg, conn).unwrap();
+                true
+            }),
+        );
+
+        // loop while not shutdown
+        loop {
+            match shutdown_rx.try_recv() {
+                Ok(_) => {
+                    break;
+                }
+                Err(e) => {
+                    match e {
+                        std::sync::mpsc::TryRecvError::Disconnected => {
+                            break;
+                        }
+                        std::sync::mpsc::TryRecvError::Empty => {
+                            // No shutdown signal received, continue processing
+                        }
+                    }
+                }
+            }
+
+            let _ = c.process(std::time::Duration::from_millis(1000));
+        }
+
+        info!("D-Bus thread exiting");
     });
 
     Ok(jh)

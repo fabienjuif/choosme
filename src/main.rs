@@ -4,7 +4,7 @@ mod dbus;
 mod desktop_files;
 mod ui;
 
-use adw::gio::prelude::ApplicationExtManual;
+use adw::gio::prelude::{ApplicationExt, ApplicationExtManual};
 use adw::glib::ExitCode;
 use anyhow::Result;
 use daemon::register_dbus;
@@ -21,10 +21,7 @@ use tracing_subscriber::prelude::*;
 use ui::start_ui;
 use xdg::BaseDirectories;
 
-const DAEMON_MODE: bool = true; // TODO: use clap to parse this
-
 fn main() {
-    debug!("start main");
     let application_name = env!("CARGO_PKG_NAME");
     // I have to make a different name otherwise it collides with daemon mode.
     // Which makes me think I could reuse the ui application to register dbus methods maybe?
@@ -41,7 +38,33 @@ fn main() {
             std::process::exit(1);
         }
     };
-    debug!("logging is initialized");
+
+    // parsing arguments
+    let args: Vec<String> = std::env::args().collect();
+    let mut url = None;
+    if args.len() > 1 {
+        url = Some(args[1].clone());
+    }
+
+    // TODO: use clap
+    let daemon_mode = match &url {
+        Some(u) if u == "daemon" => {
+            // daemon mode, no url provided
+            url = None;
+            true
+        }
+        Some(u) => {
+            // client mode, url provided
+            url = Some(u.clone());
+            false
+        }
+        _ => {
+            // default to daemon mode
+            true
+        }
+    };
+
+    debug!("start main: daemon_mode: {}, url: {:?}", daemon_mode, url);
 
     // read config
     let cfg = match config::Config::read() {
@@ -52,44 +75,63 @@ fn main() {
         }
     };
 
+    let (shutdown_signal_tx, shutdown_signal_rx) = mpsc::channel::<()>();
     let (ui_tx, ui_rx) = mpsc::channel::<String>();
     let (jh_dekstop_files, desktop_files_tx) = run_desktop_file_opener(cfg.clone());
 
     // register dbus in daemon mode
     // TODO: parse with clap if we really need it
-    let jh_dbus = register_dbus(
-        application_name,
-        cfg.clone(),
-        desktop_files_tx.clone(),
-        ui_tx,
-    )
-    .unwrap_or_else(|e| {
-        error!("failed to register dbus: {}", e);
-        std::process::exit(1);
-    });
+    let desktop_files_tx_clone = desktop_files_tx.clone();
+    let jh_dbus = if daemon_mode {
+        Some(
+            register_dbus(
+                application_name,
+                cfg.clone(),
+                desktop_files_tx_clone,
+                ui_tx.clone(),
+                shutdown_signal_rx,
+            )
+            .unwrap_or_else(|e| {
+                error!("failed to register dbus: {}", e);
+                std::process::exit(1);
+            }),
+        )
+    } else {
+        None
+    };
 
     // start the ui
     // TODO: only if NOT a client mode, aka no daemon mode, not able to contact the daemon
+    let desktop_files_tx_clone = desktop_files_tx.clone();
     let ui_application = start_ui(
         &application_id,
         application_name,
         &cfg,
-        desktop_files_tx,
+        desktop_files_tx_clone,
         ui_rx,
     );
 
     // only if NOT daemon mode NOR connected to a daemon
-    ui_application.connect_window_added(|app, _| {
+    ui_application.connect_window_added(move |app, _| {
         debug!("window added");
         if let Some(window) = app.active_window() {
-            if !DAEMON_MODE {
-                window.present();
-            } else {
-                window.connect_close_request(move |win| {
+            window.connect_close_request(move |win| {
+                if daemon_mode {
                     debug!("close request received, hiding window instead of closing");
                     win.hide();
                     gtk4::glib::Propagation::Stop
-                });
+                } else {
+                    debug!("close request received, closing window");
+                    let Some(application) = win.application() else {
+                        error!("no application found for window");
+                        std::process::exit(1);
+                    };
+                    application.quit();
+                    gtk4::glib::Propagation::Proceed
+                }
+            });
+            if !daemon_mode {
+                window.present();
             }
         } else {
             error!("app opened but no active window found");
@@ -100,16 +142,35 @@ fn main() {
     let exit_code = ui_application.run();
     if exit_code != ExitCode::SUCCESS {
         error!("UI exited with code {:?}", exit_code);
+    } else {
+        debug!("UI exited with code: {:?}", exit_code);
     }
+
+    // if we are here it means we want to exit the whole app
+    debug!("dropping shutdown_signal_tx");
+    drop(shutdown_signal_tx);
 
     // waiting threads
     // TODO: use tokio maybe later?
+    if let Some(jh_dbus) = jh_dbus {
+        info!("waiting for dbus thread to close...");
+        jh_dbus.join().unwrap_or_else(|e| {
+            error!("dbus thread failed: {:?}", e);
+        });
+        info!("dbus thread closed!");
+    } else {
+        info!("no dbus thread to wait for");
+    }
+    desktop_files_tx
+        .send(desktop_files::DesktopFileOpenerCommand::Quit)
+        .unwrap_or_else(|e| {
+            error!("failed to send quit command to desktop file opener: {}", e);
+            std::process::exit(1);
+        });
     jh_dekstop_files.join().unwrap_or_else(|e| {
         error!("desktop file opener thread failed: {:?}", e);
     });
-    jh_dbus.join().unwrap_or_else(|e| {
-        error!("dbus thread failed: {:?}", e);
-    });
+    info!("desktop file opener thread closed!");
 }
 
 // the returned guard must be held for the duration you want logging to occur.

@@ -22,6 +22,9 @@ pub struct OpenParams {
 pub enum DesktopFileOpenerCommand {
     /// Open a desktop file by its name.
     Open(OpenParams),
+
+    /// Quit.
+    Quit,
 }
 
 pub fn run_desktop_file_opener(cfg: Config) -> (JoinHandle<()>, Sender<DesktopFileOpenerCommand>) {
@@ -33,6 +36,10 @@ pub fn run_desktop_file_opener(cfg: Config) -> (JoinHandle<()>, Sender<DesktopFi
 
         loop {
             match rx.recv() {
+                Ok(DesktopFileOpenerCommand::Quit) => {
+                    info!("received command to quit desktop file opener");
+                    break;
+                }
                 Ok(DesktopFileOpenerCommand::Open(params)) => {
                     info!(
                         "received command to open desktop file with params: {:?}",
