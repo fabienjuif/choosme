@@ -15,6 +15,7 @@ pub fn start_ui(
     cfg: &Config,
     desktop_files_tx: Sender<DesktopFileOpenerCommand>,
     ui_rx: Receiver<String>,
+    daemon_mode: bool,
 ) -> Application {
     let application = Application::builder()
         .application_id(application_id)
@@ -189,6 +190,32 @@ pub fn start_ui(
         window.add_controller(keys_controller);
 
         debug!("window is connected to key controller");
+    });
+
+    application.connect_window_added(move |app, _| {
+        debug!("window added");
+        if let Some(window) = app.active_window() {
+            window.connect_close_request(move |win| {
+                if daemon_mode {
+                    debug!("close request received, hiding window instead of closing");
+                    win.hide();
+                    gtk4::glib::Propagation::Stop
+                } else {
+                    debug!("close request received, closing window");
+                    let Some(application) = win.application() else {
+                        error!("no application found for window");
+                        std::process::exit(1);
+                    };
+                    application.quit();
+                    gtk4::glib::Propagation::Proceed
+                }
+            });
+            if !daemon_mode {
+                window.present();
+            }
+        } else {
+            error!("app opened but no active window found");
+        }
     });
 
     let app_clone = application.clone();

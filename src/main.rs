@@ -4,12 +4,11 @@ mod dbus;
 mod desktop_files;
 mod ui;
 
-use adw::gio::prelude::{ApplicationExt, ApplicationExtManual};
+use adw::gio::prelude::ApplicationExtManual;
 use adw::glib::ExitCode;
 use anyhow::Result;
 use daemon::register_dbus;
 use desktop_files::run_desktop_file_opener;
-use gtk4::prelude::{GtkApplicationExt, GtkWindowExt, WidgetExt};
 use std::env;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -101,7 +100,6 @@ fn main() {
     };
 
     // start the ui
-    // TODO: only if NOT a client mode, aka no daemon mode, not able to contact the daemon
     let desktop_files_tx_clone = desktop_files_tx.clone();
     let ui_application = start_ui(
         &application_id,
@@ -109,34 +107,8 @@ fn main() {
         &cfg,
         desktop_files_tx_clone,
         ui_rx,
+        daemon_mode,
     );
-
-    // only if NOT daemon mode NOR connected to a daemon
-    ui_application.connect_window_added(move |app, _| {
-        debug!("window added");
-        if let Some(window) = app.active_window() {
-            window.connect_close_request(move |win| {
-                if daemon_mode {
-                    debug!("close request received, hiding window instead of closing");
-                    win.hide();
-                    gtk4::glib::Propagation::Stop
-                } else {
-                    debug!("close request received, closing window");
-                    let Some(application) = win.application() else {
-                        error!("no application found for window");
-                        std::process::exit(1);
-                    };
-                    application.quit();
-                    gtk4::glib::Propagation::Proceed
-                }
-            });
-            if !daemon_mode {
-                window.present();
-            }
-        } else {
-            error!("app opened but no active window found");
-        }
-    });
 
     info!("running application: {}", application_id);
     let exit_code = ui_application.run();
