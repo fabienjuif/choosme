@@ -27,34 +27,11 @@ pub fn start_ui(
     let shared_files_clone_open = Rc::clone(&shared_files);
 
     // connect to the 'open' signal, which is triggered when the application is launched with URIs/files.
-    // let cfg_clone = cfg.clone();
-    // let desktop_files_tx_clone = desktop_files_tx.clone();
     application.connect_open(move |app, _, _| {
         // just to avoid a GIO critical and force activation
         // the args are handled via clap in the main.rs
         app.activate();
     });
-    //     if !hint.is_empty() {
-    //         info!("xdg-open provided us an hint: {:?}", hint);
-    //     }
-    //     debug!("app opened");
-    //     if let Some(file) = files.first() {
-    //         debug!("received `open` signal with file: {:?}", file);
-    //         if let Some(desktop_file) = cfg_clone.find_matching_desktop_file(file.uri().as_str()) {
-    //             info!("found matching desktop file: {:?}", desktop_file.id);
-    //             // send command to desktop file opener
-    //             if let Err(e) =
-    //                 desktop_files_tx_clone.send(DesktopFileOpenerCommand::Open(OpenParams {
-    //                     uris: files.iter().map(|f| f.uri().as_str().to_string()).collect(),
-    //                     desktop_file_id: desktop_file.id.clone(),
-    //                 }))
-    //             {
-    //                 error!("failed to send command to desktop file opener: {}", e);
-    //             }
-    //             app.quit();
-    //         }
-    //     }
-    // });
 
     let application_name_clone = application_name.to_string();
     let cfg_clone = cfg.clone();
