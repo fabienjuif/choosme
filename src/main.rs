@@ -127,7 +127,7 @@ fn main() {
     };
 
     let (shutdown_signal_tx, shutdown_signal_rx) = mpsc::channel::<()>();
-    let (ui_tx, ui_rx) = mpsc::channel::<String>();
+    let (ui_tx, ui_rx) = async_channel::bounded::<String>(1);
 
     // register dbus in daemon mode
     let desktop_files_tx_clone = desktop_files_tx.clone();

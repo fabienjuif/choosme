@@ -6,7 +6,7 @@ use gtk4::gio::{self};
 use gtk4::{self as gtk, Align, Box, Image, Label, ListBox, Orientation, SelectionMode, Window};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::mpsc::Sender;
 use tracing::{debug, error, info, warn};
 
 pub fn start_ui(
@@ -14,7 +14,7 @@ pub fn start_ui(
     application_name: &str,
     cfg: &Config,
     desktop_files_tx: Sender<DesktopFileOpenerCommand>,
-    ui_rx: Receiver<String>,
+    ui_rx: async_channel::Receiver<String>,
     daemon_mode: bool,
     uri: Option<String>,
 ) -> Application {
@@ -201,25 +201,24 @@ pub fn start_ui(
     });
 
     let app_clone = application.clone();
-    glib::source::idle_add_local(move || {
-        match ui_rx.try_recv() {
-            Ok(uri) => {
-                *shared_files_clone_open.borrow_mut() = Some(uri);
-                if let Some(win) = app_clone.active_window() {
-                    win.show();
-                } else {
-                    error!("no active window found");
+    glib::spawn_future_local(async move {
+        loop {
+            match ui_rx.recv().await {
+                Ok(uri) => {
+                    debug!("received URI from UI: {}", uri);
+                    *shared_files_clone_open.borrow_mut() = Some(uri);
+                    if let Some(win) = app_clone.active_window() {
+                        win.show();
+                    } else {
+                        error!("no active window found");
+                    }
+                }
+                Err(e) => {
+                    error!("error receiving URI from UI: {}", e);
+                    break;
                 }
             }
-            Err(TryRecvError::Empty) => {
-                // nothing to do, continue looping
-            }
-            Err(TryRecvError::Disconnected) => {
-                info!("ui_rx disconnected");
-                return glib::ControlFlow::Break;
-            }
         }
-        glib::ControlFlow::Continue
     });
 
     debug!("application is initialized and connected to activate signal");
