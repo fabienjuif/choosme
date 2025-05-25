@@ -1,3 +1,4 @@
+mod cli;
 mod config;
 mod daemon;
 mod dbus;
@@ -6,7 +7,7 @@ mod ui;
 
 use adw::gio::prelude::ApplicationExtManual;
 use adw::glib::ExitCode;
-use anyhow::Result;
+use anyhow::{Result, format_err};
 use daemon::register_dbus;
 use desktop_files::run_desktop_file_opener;
 use std::env;
@@ -21,6 +22,13 @@ use ui::start_ui;
 use xdg::BaseDirectories;
 
 fn main() {
+    if let Err(e) = run() {
+        error!("{e}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let application_name = env!("CARGO_PKG_NAME");
     // I have to make a different name otherwise it collides with daemon mode.
     // Which makes me think I could reuse the ui application to register dbus methods maybe?
@@ -29,45 +37,56 @@ fn main() {
 
     // we keep the guard around for the duration of the application
     // to ensure that all logs are flushed before the application exits.
-    let _guard = match init_logging(application_name) {
-        Ok(g) => g,
-        Err(e) => {
-            error!("failed to initialize logging: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let _guard =
+        init_logging(application_name).map_err(|e| format_err!("on init_logging(): {e}"))?;
 
     // parsing arguments
-    let args: Vec<String> = std::env::args().collect();
-    let mut uri = None;
-    if args.len() > 1 {
-        uri = Some(args[1].clone());
+    let mut daemon_mode = false;
+    let cli = cli::parse();
+    match cli.command {
+        Some(cli::Commands::Daemon {
+            set_default,
+            unset_default,
+            status,
+        }) => {
+            if !status && !unset_default && set_default.is_none() {
+                daemon_mode = true;
+            } else {
+                // in all other cases we need a dbus client
+                let dbus_client = dbus::DBUSClient::new()
+                    .map_err(|e| format_err!("on DBUSClient::new(): {e}"))?;
+
+                if status {
+                    // status command, we just print the current default application
+                    let output = dbus_client
+                        .status()
+                        .map_err(|e| format_err!("on dbus_client.status(): {e}"))?;
+                    serde_json::to_writer(std::io::stdout(), &output)
+                        .expect("failed to write status command output");
+                    return Ok(());
+                }
+
+                // TODO:
+                return Err(format_err!(
+                    "NOT READY YET set_default: {:?}, unset_default: {}",
+                    set_default,
+                    unset_default
+                ));
+            }
+        }
+        None => {
+            // run the UI
+            warn!(
+                "no command provided, running in client mode: uri={:?}",
+                cli.uri
+            );
+        }
     }
-
-    // TODO: use clap
-    let daemon_mode = match &uri {
-        Some(u) if u == "daemon" => {
-            // daemon mode, no uri provided
-            uri = None;
-            true
-        }
-        Some(u) => {
-            // client mode, uri provided
-            uri = Some(u.clone());
-            false
-        }
-        _ => {
-            // default to daemon mode
-            true
-        }
-    };
-
-    debug!("start main: daemon_mode: {}, uri: {:?}", daemon_mode, uri);
 
     // if no daemon mode, we try to connect to it
     // and if we fail we fallback with local resolution (and eventually start the UI onf fallback)
     if !daemon_mode {
-        if let Some(uri) = &uri {
+        if let Some(uri) = &cli.uri {
             if let Ok(dbus_client) = dbus::DBUSClient::new() {
                 debug!("connected to dbus in client mode");
                 match dbus_client.open(uri) {
@@ -76,6 +95,7 @@ fn main() {
                         std::process::exit(0);
                     }
                     Err(e) => {
+                        // we are not exiting here, we will fallback to standalone mode
                         error!(
                             "failed to execute open command: {}, fallbacking to standalone mode",
                             e
@@ -91,18 +111,12 @@ fn main() {
     // if we are here, it means we are either in daemon mode or we unsucessfully tried to connect to dbus
 
     // read config
-    let cfg = match config::Config::read() {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            error!("failed to read config file: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let cfg = config::Config::read().map_err(|e| format_err!("on Config::read(): {}", e))?;
 
     let (jh_dekstop_files, desktop_files_tx) = run_desktop_file_opener(cfg.clone());
 
     // if we have an uri maybe we can open it?
-    let resolved = if let Some(uri) = &uri {
+    let resolved = if let Some(uri) = &cli.uri {
         let mut found = false;
         for desktop_file in &cfg.desktop_files {
             if desktop_file.match_uri(uri) {
@@ -159,7 +173,7 @@ fn main() {
             desktop_files_tx_clone,
             ui_rx,
             daemon_mode,
-            uri,
+            cli.uri,
         );
 
         info!("running application: {}", application_id);
@@ -190,12 +204,13 @@ fn main() {
         .send(desktop_files::DesktopFileOpenerCommand::Quit)
         .unwrap_or_else(|e| {
             error!("failed to send quit command to desktop file opener: {}", e);
-            std::process::exit(1);
         });
     jh_dekstop_files.join().unwrap_or_else(|e| {
         error!("desktop file opener thread failed: {:?}", e);
     });
     info!("desktop file opener thread closed!");
+
+    Ok(())
 }
 
 // the returned guard must be held for the duration you want logging to occur.

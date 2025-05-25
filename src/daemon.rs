@@ -3,15 +3,21 @@ use std::{
     thread::JoinHandle,
 };
 
+use adw::gio::prelude::{AppInfoExt, IconExt};
 use anyhow::Result;
 use dbus::{MethodErr, blocking::Connection, channel::MatchingReceiver};
 use dbus_crossroads::{Context, Crossroads};
 use tracing::{debug, info};
 
-use crate::{config::Config, desktop_files::DesktopFileOpenerCommand};
+use crate::{
+    config::Config,
+    dbus::StatusCmdOutputApplication,
+    desktop_files::{DesktopFileOpenerCommand, resolve_desktop_files},
+};
 
 struct Daemon {
     cfg: Config,
+    default_application_id: Option<String>,
     desktop_files_tx: Sender<DesktopFileOpenerCommand>,
     toggle_ui_tx: async_channel::Sender<String>,
 }
@@ -48,6 +54,35 @@ impl Daemon {
             status: crate::dbus::OpenCmdOutputsStatus::Fallbacked,
         })
     }
+
+    fn status(
+        &self,
+        inputs: crate::dbus::StatusCmdInputs,
+    ) -> Result<crate::dbus::StatusCmdOutputs> {
+        debug!("status command received with inputs: {:?}", inputs);
+
+        let resolved = resolve_desktop_files(&self.cfg);
+
+        Ok(crate::dbus::StatusCmdOutputs {
+            default_application_id: self.default_application_id.clone(),
+            applications: self
+                .cfg
+                .desktop_files
+                .iter()
+                .map(|df| StatusCmdOutputApplication {
+                    id: df.id.clone(),
+                    name: df.alias.clone().unwrap_or_else(|| df.id.clone()),
+                    icon: resolved
+                        .get(&df.id)
+                        .and_then(|d| {
+                            d.icon()
+                                .map(|i| i.to_string().map_or("".to_string(), |i| i.into()))
+                        })
+                        .unwrap_or("".to_string()),
+                })
+                .collect(),
+        })
+    }
 }
 
 pub fn register_dbus(
@@ -63,6 +98,7 @@ pub fn register_dbus(
     // TODO:
     let daemon = Daemon {
         cfg,
+        default_application_id: None,
         desktop_files_tx,
         toggle_ui_tx,
     };
@@ -86,7 +122,19 @@ pub fn register_dbus(
             },
         );
 
-        // TODO: other methods
+        b.method(
+            crate::dbus::STATUS_METHOD,
+            crate::dbus::STATUS_METHOD_INPUTS,
+            crate::dbus::STATUS_METHOD_OUTPUTS,
+            move |_: &mut Context, daemon: &mut Daemon, params: ()| {
+                let inputs = crate::dbus::StatusCmdInputs::from_dbus_input(params);
+                let output = daemon
+                    .status(inputs)
+                    .map_err(|e| MethodErr::failed(&e.to_string()))?
+                    .to_dbus_output();
+                Ok(output)
+            },
+        );
     });
     cr.insert("/", &[iface_token], daemon);
 
