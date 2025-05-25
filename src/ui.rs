@@ -16,13 +16,14 @@ pub fn start_ui(
     desktop_files_tx: Sender<DesktopFileOpenerCommand>,
     ui_rx: Receiver<String>,
     daemon_mode: bool,
+    uri: Option<String>,
 ) -> Application {
     let application = Application::builder()
         .application_id(application_id)
         .flags(gio::ApplicationFlags::HANDLES_OPEN | gio::ApplicationFlags::NON_UNIQUE)
         .build();
 
-    let shared_files: Rc<RefCell<Option<Vec<gio::File>>>> = Rc::new(RefCell::new(None));
+    let shared_files: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(uri));
     let shared_files_clone_open = Rc::clone(&shared_files);
 
     // connect to the 'open' signal, which is triggered when the application is launched with URIs/files.
@@ -111,22 +112,26 @@ pub fn start_ui(
 
             let desktop_id_for_closure = desktop_file_config.id.clone();
             let desktop_files_tx_for_closure = desktop_files_clone.clone();
-            let shared_files_clone_active = Rc::clone(&shared_files);
+            let shared_uri_clone_active = Rc::clone(&shared_files);
             let app_for_closure = app.clone();
             row.connect_activated(move |_| {
-                let files = shared_files_clone_active.borrow().clone().unwrap_or_default();
+                let uri = shared_uri_clone_active.borrow().clone().unwrap_or_default();
                 if let Err(e) = desktop_files_tx_for_closure.send(DesktopFileOpenerCommand::Open(
                     OpenParams {
-                        uris: files.iter().map(|f| f.uri().as_str().to_string()).collect(),
+                        uris: vec![uri],
                         desktop_file_id: desktop_id_for_closure.clone(),
                     },
                 )) {
                     error!("failed to send command to desktop file opener: {}", e);
                 }
                 info!("after sending command, quitting the app");
+                if daemon_mode {
                 app_for_closure.windows()
                     .iter()
                     .for_each(|window| window.hide());
+                } else {
+                    app_for_closure.quit();
+                }
             });
             list_box.append(&row);
             items_added += 1;
@@ -222,7 +227,7 @@ pub fn start_ui(
     glib::source::idle_add_local(move || {
         match ui_rx.try_recv() {
             Ok(uri) => {
-                *shared_files_clone_open.borrow_mut() = Some(vec![gio::File::for_uri(&uri)]);
+                *shared_files_clone_open.borrow_mut() = Some(uri);
                 if let Some(win) = app_clone.active_window() {
                     win.show();
                 } else {

@@ -40,21 +40,21 @@ fn main() {
 
     // parsing arguments
     let args: Vec<String> = std::env::args().collect();
-    let mut url = None;
+    let mut uri = None;
     if args.len() > 1 {
-        url = Some(args[1].clone());
+        uri = Some(args[1].clone());
     }
 
     // TODO: use clap
-    let daemon_mode = match &url {
+    let daemon_mode = match &uri {
         Some(u) if u == "daemon" => {
-            // daemon mode, no url provided
-            url = None;
+            // daemon mode, no uri provided
+            uri = None;
             true
         }
         Some(u) => {
-            // client mode, url provided
-            url = Some(u.clone());
+            // client mode, uri provided
+            uri = Some(u.clone());
             false
         }
         _ => {
@@ -63,7 +63,7 @@ fn main() {
         }
     };
 
-    debug!("start main: daemon_mode: {}, url: {:?}", daemon_mode, url);
+    debug!("start main: daemon_mode: {}, uri: {:?}", daemon_mode, uri);
 
     // read config
     let cfg = match config::Config::read() {
@@ -74,14 +74,39 @@ fn main() {
         }
     };
 
-    let (shutdown_signal_tx, shutdown_signal_rx) = mpsc::channel::<()>();
-    let (ui_tx, ui_rx) = mpsc::channel::<String>();
     let (jh_dekstop_files, desktop_files_tx) = run_desktop_file_opener(cfg.clone());
 
+    // if we have an uri maybe we can open it?
+    let resolved = if let Some(uri) = &uri {
+        let mut found = false;
+        for desktop_file in &cfg.desktop_files {
+            if desktop_file.match_uri(uri) {
+                debug!("found matching desktop file: {}", desktop_file.id);
+                // we have a matching desktop file, we can open the url
+                if let Err(e) = desktop_files_tx.send(
+                    desktop_files::DesktopFileOpenerCommand::Open(desktop_files::OpenParams {
+                        uris: vec![uri.clone()],
+                        desktop_file_id: desktop_file.id.clone(),
+                    }),
+                ) {
+                    error!("failed to send open command: {}", e);
+                    std::process::exit(1);
+                }
+                found = true;
+                break;
+            }
+        }
+        found
+    } else {
+        false
+    };
+
+    let (shutdown_signal_tx, shutdown_signal_rx) = mpsc::channel::<()>();
+    let (ui_tx, ui_rx) = mpsc::channel::<String>();
+
     // register dbus in daemon mode
-    // TODO: parse with clap if we really need it
     let desktop_files_tx_clone = desktop_files_tx.clone();
-    let jh_dbus = if daemon_mode {
+    let jh_dbus = if daemon_mode && !resolved {
         Some(
             register_dbus(
                 application_name,
@@ -100,22 +125,25 @@ fn main() {
     };
 
     // start the ui
-    let desktop_files_tx_clone = desktop_files_tx.clone();
-    let ui_application = start_ui(
-        &application_id,
-        application_name,
-        &cfg,
-        desktop_files_tx_clone,
-        ui_rx,
-        daemon_mode,
-    );
+    if !resolved {
+        let desktop_files_tx_clone = desktop_files_tx.clone();
+        let ui_application = start_ui(
+            &application_id,
+            application_name,
+            &cfg,
+            desktop_files_tx_clone,
+            ui_rx,
+            daemon_mode,
+            uri,
+        );
 
-    info!("running application: {}", application_id);
-    let exit_code = ui_application.run();
-    if exit_code != ExitCode::SUCCESS {
-        error!("UI exited with code {:?}", exit_code);
-    } else {
-        debug!("UI exited with code: {:?}", exit_code);
+        info!("running application: {}", application_id);
+        let exit_code = ui_application.run();
+        if exit_code != ExitCode::SUCCESS {
+            error!("UI exited with code {:?}", exit_code);
+        } else {
+            debug!("UI exited with code: {:?}", exit_code);
+        }
     }
 
     // if we are here it means we want to exit the whole app
