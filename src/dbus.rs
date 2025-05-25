@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use dbus::blocking::{Connection, Proxy};
+use serde::Serialize;
 
 pub const DEST: &str = "juif.fabien.choosme";
 
@@ -104,11 +105,11 @@ impl StatusCmdInputs {
     pub fn from_dbus_input(_input: ()) -> Self {
         StatusCmdInputs {}
     }
-    
+
     pub fn to_dbus_input(&self) {}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct StatusCmdOutputs {
     pub applications: Vec<StatusCmdOutputApplication>,
     pub default_application_id: Option<String>,
@@ -141,7 +142,7 @@ impl StatusCmdOutputs {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct StatusCmdOutputApplication {
     pub id: String,
     pub name: String,

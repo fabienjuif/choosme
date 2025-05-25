@@ -126,8 +126,8 @@ pub fn register_dbus(
             crate::dbus::STATUS_METHOD,
             crate::dbus::STATUS_METHOD_INPUTS,
             crate::dbus::STATUS_METHOD_OUTPUTS,
-            move |_: &mut Context, daemon: &mut Daemon, _: ()| {
-                let inputs = crate::dbus::StatusCmdInputs {};
+            move |_: &mut Context, daemon: &mut Daemon, params: ()| {
+                let inputs = crate::dbus::StatusCmdInputs::from_dbus_input(params);
                 let output = daemon
                     .status(inputs)
                     .map_err(|e| MethodErr::failed(&e.to_string()))?
