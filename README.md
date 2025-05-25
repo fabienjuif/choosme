@@ -81,8 +81,18 @@ You can override the styling creating a CSS file here: `.config/choosme/style.cs
 }
 ```
 
-## TODO
-- [ ] Daemon mode so we can start the window in background and print it when we receive a new event (faster prints). It also allow us to switch the default browser, and to remember the last used browser too.
+## Daemon mode
+
+If you want to have a faster and/or having control over your fallback browser for your session, you can use the daemon mode.
+Then you are still using the app as usual. Choosme will try to connect to the daemon, and if it fails run as a |standalone application.
+
+Example for sway:
+
+```
+exec {
+    choosme daemon
+}
+```
 
 ## Nice to have
 
