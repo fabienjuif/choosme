@@ -1,7 +1,7 @@
 use anyhow::Result;
 use regex::Regex;
 use serde::Deserialize;
-use std::{env, fs};
+use std::{env, fs, io};
 use tracing::info;
 use xdg::BaseDirectories;
 
@@ -10,9 +10,17 @@ pub fn read_css_file() -> Result<String> {
     let css_path = xdg_dirs.place_config_file("style.css")?;
     info!("css path: {}", css_path.display());
 
-    let css_content = fs::read_to_string(&css_path)?;
-
-    Ok(css_content)
+    match fs::read_to_string(&css_path) {
+        Ok(css_content) => Ok(css_content),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            info!("css file not found, using default style");
+            let content = include_str!("../style.css").to_string();
+            fs::write(&css_path, &content)
+                .map_err(|e| e.into())
+                .map(|_| content)
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]

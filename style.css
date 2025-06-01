@@ -1,0 +1,25 @@
+.application {
+  padding: 0.5rem;
+  border-radius: 0;
+}
+
+.application.first {
+  border-radius: 1rem 1rem 0 0;
+}
+
+.application.last {
+  border-radius: 0 0 1rem 1rem;
+}
+
+.list > * {
+  padding: 0;
+}
+
+.list {
+  border-radius: 1rem 1rem;
+  background-color: transparent;
+}
+
+.main-window {
+  background-color: transparent;
+}
