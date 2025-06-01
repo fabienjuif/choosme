@@ -5,11 +5,11 @@ mod dbus;
 mod desktop_files;
 mod ui;
 
-use adw::gio::prelude::ApplicationExtManual;
-use adw::glib::ExitCode;
 use anyhow::{Result, format_err};
 use daemon::register_dbus;
 use desktop_files::run_desktop_file_opener;
+use gtk4::gio::prelude::ApplicationExtManual;
+use gtk4::glib::ExitCode;
 use std::env;
 use std::path::PathBuf;
 use std::sync::mpsc;

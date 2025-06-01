@@ -4,10 +4,10 @@ use std::{
     time::Duration,
 };
 
-use adw::gio::prelude::{AppInfoExt, IconExt};
 use anyhow::Result;
 use dbus::{MethodErr, blocking::Connection, channel::MatchingReceiver};
 use dbus_crossroads::{Context, Crossroads};
+use gtk4::gio::prelude::{AppInfoExt, IconExt};
 use tracing::{debug, info};
 
 use crate::{

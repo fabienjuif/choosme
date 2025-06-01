@@ -1,4 +1,5 @@
-use adw::gio::{DesktopAppInfo, prelude::AppInfoExt};
+use gdk4::gio::AppLaunchContext;
+use gtk4::gio::{DesktopAppInfo, prelude::AppInfoExt};
 use std::{
     collections::HashMap,
     env,
@@ -58,9 +59,7 @@ pub fn run_desktop_file_opener(cfg: Config) -> (JoinHandle<()>, Sender<DesktopFi
                     };
 
                     // open
-                    if let Err(e) =
-                        desktop_file.launch_uris(&uris, None::<&adw::gio::AppLaunchContext>)
-                    {
+                    if let Err(e) = desktop_file.launch_uris(&uris, None::<&AppLaunchContext>) {
                         error!(
                             "failed to open desktop file '{}': {}",
                             params.desktop_file_id, e

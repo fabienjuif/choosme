@@ -9,7 +9,6 @@
 1. Install dependencies
 
    - libgtk-4-dev
-   - libadwaita-1-dev
    - libdbus-1-dev
 
 2. Install rust: https://www.rust-lang.org/tools/install
@@ -80,17 +79,40 @@ regexps = [
 
 ## Styling
 
-You can override the styling creating a CSS file here: `.config/choosme/style.css`.
+On first run, if the CSS file does not exist, Choosme will create a new default one.
+The styling creating a CSS file here: `~/.config/choosme/style.css`.
 
 ```css
+/* application (item) */
+.application {
+  padding: 0.5rem;
+  border-radius: 0;
+}
+
+/* first application */
+.application.first {
+  border-radius: 1rem 1rem 0 0;
+}
+
+/* last application */
+.application.last {
+  border-radius: 0 0 1rem 1rem;
+}
+
+/* row between list and application */
+.list > * {
+  padding: 0;
+}
+
+/* main list */
+.list {
+  border-radius: 1rem 1rem;
+  background-color: transparent;
+}
+
 /* main window */
 .main-window {
-}
-/* list of items */
-.boxed-list {
-}
-/* a row / item */
-.row {
+  background-color: transparent;
 }
 ```
 

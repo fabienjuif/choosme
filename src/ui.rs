@@ -1,9 +1,9 @@
 use crate::config::{Config, read_css_file};
 use crate::desktop_files::{DesktopFileOpenerCommand, OpenParams, resolve_desktop_files};
-use adw::{ActionRow, Application};
-use adw::{glib, prelude::*};
 use gtk4::gio::{self};
 use gtk4::{self as gtk, Align, Box, Image, Label, ListBox, Orientation, SelectionMode, Window};
+use gtk4::{Application, Button};
+use gtk4::{glib, prelude::*};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
@@ -40,6 +40,7 @@ pub fn start_ui(
         debug!("app activated");
 
          // css
+         let display = &gtk::gdk::Display::default().expect("could not connect to a display.");
          match read_css_file() {
             Err(e) => {
                 warn!("failed to read css file: {}", e);
@@ -48,9 +49,9 @@ pub fn start_ui(
                 let provider = gtk::CssProvider::new();
                 provider.load_from_data(&css_content);
                 gtk::style_context_add_provider_for_display(
-                    &gtk::gdk::Display::default().expect("could not connect to a display."),
+                    display,
                     &provider,
-                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+                    gtk::STYLE_PROVIDER_PRIORITY_USER,
                 );
             }
         };
@@ -58,40 +59,55 @@ pub fn start_ui(
         debug!("CSS is loaded");
 
         let list_box = ListBox::builder()
-            .margin_top(12)
-            .margin_end(12)
-            .margin_bottom(12)
-            .margin_start(12)
             .selection_mode(SelectionMode::None)
-            .css_classes(vec![String::from("boxed-list")])
+            .css_classes(vec![String::from("list")])
             .build();
 
-        let mut items_added = 0;
         let desktop_files = resolve_desktop_files(&cfg_clone);
-        for desktop_file_config in &cfg_clone.desktop_files{
+        let desktop_files_len = desktop_files.len();
+        for (idx, desktop_file_config) in cfg_clone.desktop_files.iter().enumerate(){
             let Some(desktop_file) = desktop_files.get(&desktop_file_config.id) else {
                 warn!("no desktop file found for id: {}", desktop_file_config.id);
                 continue;
             };
-            let row = ActionRow::builder()
-                .activatable(true)
-                .title(desktop_file_config.alias.as_ref().map_or(desktop_file.name(), |alias| alias.into()))
-                .css_classes(vec![String::from("row")])
-                .build();
-            if let Some(icon) = desktop_file.icon() {
-                    let icon_image = Image::builder()
-                    .gicon(&icon)
-                        .pixel_size(48)
-                        .margin_end(12)
-                        .build();
-                    row.add_prefix(&icon_image);
+            let mut button_css_classes = vec![String::from("application")];
+            if idx == 0 {
+                button_css_classes.push("first".into());
+            } else if idx == desktop_files_len - 1 {
+                button_css_classes.push("last".into());
             }
+            let button = Button::builder()
+                .css_classes(button_css_classes)
+                .label(desktop_file_config.alias.as_ref().map_or(desktop_file.name(), |alias| alias.into()))
+                .build();
+
+            let button_box = Box::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(12)
+                .css_classes(vec![String::from("box")])
+                .build();
+            button.set_child(Some(&button_box));
+
+            if let Some(icon) = desktop_file.icon() {
+                let icon_image = Image::builder()
+                .gicon(&icon)
+                .css_classes(vec![String::from("icon")])
+                    .pixel_size(48)
+                    .margin_end(12)
+                    .build();
+                button_box.append(&icon_image);
+            }
+
+            button_box.append(&Label::builder()
+                .label(desktop_file_config.alias.as_ref().map_or(desktop_file.name(), |alias| alias.into()))
+                .css_classes(vec![String::from("label")])
+                .build());
 
             let desktop_id_for_closure = desktop_file_config.id.clone();
             let desktop_files_tx_for_closure = desktop_files_clone.clone();
             let shared_uri_clone_active = Rc::clone(&shared_files);
             let app_for_closure = app.clone();
-            row.connect_activated(move |_| {
+            button.connect_clicked(move |_| {
                 let uri = shared_uri_clone_active.borrow().clone().unwrap_or_default();
                 if let Err(e) = desktop_files_tx_for_closure.send(DesktopFileOpenerCommand::Open(
                     OpenParams {
@@ -110,19 +126,19 @@ pub fn start_ui(
                     app_for_closure.quit();
                 }
             });
-            list_box.append(&row);
-            items_added += 1;
+            list_box.append(&button);
         }
 
-        let content = Box::new(Orientation::Vertical, 0);
+        let content = Box::builder()
+            .orientation(Orientation::Vertical)
+            .css_classes(vec!["main-box".to_string()])
+            .build();
 
-        if items_added == 0 {
+        if desktop_files_len == 0 {
             let label = Label::builder()
                 .label("No desktop entries found or processed from the list.\nPlease check the paths in `DESKTOP_FILES` constant.")
                 .halign(Align::Center)
                 .valign(Align::Center)
-                .margin_top(20)
-                .margin_bottom(20)
                 .wrap(true)
                 .build();
             content.append(&label);
@@ -150,7 +166,11 @@ pub fn start_ui(
         keys_controller.connect_key_pressed(move |_, keyval, _, _| {
             if keyval == gtk4::gdk::Key::Escape {
                 if let Some(window) = app_clone.active_window() {
-                    window.hide();
+                    if daemon_mode {
+                        window.hide();
+                    } else {
+                        app_clone.quit();
+                    }
                 } else {
                     error!("no active window found to hide");
                 }
@@ -161,10 +181,18 @@ pub fn start_ui(
                 let index = digit.saturating_sub(1) as i32;
 
                 if let Some(row) = list_box_clone.row_at_index(index) {
-                    if let Some(action_row) = row.downcast_ref::<ActionRow>() {
-                        adw::prelude::ActionRowExt::activate(action_row);
+                    info!("activating row at index: {:?}", row);
+
+                    let Some(widget) = row.child() else {
+                        warn!("no child widget found in row at index: {}", index);
                         return gtk::glib::Propagation::Stop;
+                    };
+                    if let Some(button) = widget.downcast_ref::<Button>() {
+                        gtk4::prelude::ButtonExt::emit_clicked(button);
+                    } else {
+                        warn!("no button found in row at index: {}", index);
                     }
+                    return gtk::glib::Propagation::Stop;
                 }
             }
             gtk::glib::Propagation::Proceed

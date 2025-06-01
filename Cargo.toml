@@ -16,7 +16,6 @@ include = [
 ]
 
 [dependencies]
-adw = { version = "0.7.2", package = "libadwaita", features = ["v1_5"] }
 anyhow = "1.0.98"
 async-channel = "2.3.1"
 clap = { version = "4.5.38", features = ["derive"] }
