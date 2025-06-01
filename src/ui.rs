@@ -59,10 +59,6 @@ pub fn start_ui(
         debug!("CSS is loaded");
 
         let list_box = ListBox::builder()
-            .margin_top(0)
-            .margin_end(0)
-            .margin_bottom(0)
-            .margin_start(0)
             .selection_mode(SelectionMode::None)
             .css_classes(vec![String::from("list")])
             .build();
