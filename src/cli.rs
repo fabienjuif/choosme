@@ -8,6 +8,12 @@ pub struct Cli {
 
     #[arg(index = 1, help = "URI to open")]
     pub uri: Option<String>,
+
+    /// If set, append the given id to the config file name
+    /// This is useful for running multiple instances of choosme
+    /// For example: `choosme --id screenshot`
+    #[arg(long)]
+    pub id: Option<String>,
 }
 
 #[derive(Subcommand)]

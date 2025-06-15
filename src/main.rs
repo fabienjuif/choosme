@@ -2,14 +2,14 @@ mod cli;
 mod config;
 mod daemon;
 mod dbus;
-mod desktop_files;
+mod runner;
 mod ui;
 
 use anyhow::{Result, format_err};
 use daemon::register_dbus;
-use desktop_files::run_desktop_file_opener;
 use gtk4::gio::prelude::ApplicationExtManual;
 use gtk4::glib::ExitCode;
+use runner::start_applications_opener;
 use std::env;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -181,23 +181,23 @@ fn run() -> Result<()> {
     // if we are here, it means we are either in daemon mode or we unsucessfully tried to connect to dbus
 
     // read config
-    let cfg = config::Config::read().map_err(|e| format_err!("on Config::read(): {}", e))?;
+    let cfg = config::Config::read(cli.id).map_err(|e| format_err!("on Config::read(): {}", e))?;
 
-    let (jh_dekstop_files, desktop_files_tx) = run_desktop_file_opener(cfg.clone());
+    let (jh_dekstop_files, desktop_files_tx) = start_applications_opener(cfg.clone());
 
     // if we have an uri maybe we can open it?
     let resolved = if let Some(uri) = &cli.uri {
         let mut found = false;
-        for desktop_file in &cfg.desktop_files {
+        for desktop_file in &cfg.applications {
             if desktop_file.match_uri(uri) {
                 debug!("found matching desktop file: {}", desktop_file.id);
                 // we have a matching desktop file, we can open the url
-                if let Err(e) = desktop_files_tx.send(
-                    desktop_files::DesktopFileOpenerCommand::Open(desktop_files::OpenParams {
+                if let Err(e) = desktop_files_tx.send(runner::ApplicationOpenerCommand::Open(
+                    runner::OpenParams {
                         uris: vec![uri.clone()],
-                        desktop_file_id: desktop_file.id.clone(),
-                    }),
-                ) {
+                        application_id: desktop_file.id.clone(),
+                    },
+                )) {
                     error!("failed to send open command: {}", e);
                     std::process::exit(1);
                 }
@@ -247,7 +247,7 @@ fn run() -> Result<()> {
         );
 
         info!("running application: {}", application_id);
-        let exit_code = ui_application.run();
+        let exit_code = ui_application.run_with_args::<String>(&[]);
         if exit_code != ExitCode::SUCCESS {
             error!("UI exited with code {:?}", exit_code);
         } else {
@@ -271,7 +271,7 @@ fn run() -> Result<()> {
         info!("no dbus thread to wait for");
     }
     desktop_files_tx
-        .send(desktop_files::DesktopFileOpenerCommand::Quit)
+        .send(runner::ApplicationOpenerCommand::Quit)
         .unwrap_or_else(|e| {
             error!("failed to send quit command to desktop file opener: {}", e);
         });

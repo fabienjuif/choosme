@@ -1,5 +1,5 @@
 use crate::config::{Config, read_css_file};
-use crate::desktop_files::{DesktopFileOpenerCommand, OpenParams, resolve_desktop_files};
+use crate::runner::{ApplicationOpenerCommand, OpenParams, from_config};
 use gtk4::gio::{self};
 use gtk4::{self as gtk, Align, Box, Image, Label, ListBox, Orientation, SelectionMode, Window};
 use gtk4::{Application, Button};
@@ -13,7 +13,7 @@ pub fn start_ui(
     application_id: &str,
     application_name: &str,
     cfg: &Config,
-    desktop_files_tx: Sender<DesktopFileOpenerCommand>,
+    desktop_files_tx: Sender<ApplicationOpenerCommand>,
     ui_rx: async_channel::Receiver<String>,
     daemon_mode: bool,
     uri: Option<String>,
@@ -63,22 +63,25 @@ pub fn start_ui(
             .css_classes(vec![String::from("list")])
             .build();
 
-        let desktop_files = resolve_desktop_files(&cfg_clone);
-        let desktop_files_len = desktop_files.len();
-        for (idx, desktop_file_config) in cfg_clone.desktop_files.iter().enumerate(){
-            let Some(desktop_file) = desktop_files.get(&desktop_file_config.id) else {
-                warn!("no desktop file found for id: {}", desktop_file_config.id);
-                continue;
+        let applications = from_config(&cfg_clone);
+        let applications_len = cfg_clone.applications.len();
+        for (idx, application_config) in cfg_clone.applications.iter().enumerate(){
+            let application = match applications.get(&application_config.id) {
+                Some(app) => app,
+                None => {
+                    warn!("application with id '{}' not found in applications map", application_config.id);
+                    continue;
+                }
             };
             let mut button_css_classes = vec![String::from("application")];
             if idx == 0 {
                 button_css_classes.push("first".into());
-            } else if idx == desktop_files_len - 1 {
+            } else if idx == applications_len - 1 {
                 button_css_classes.push("last".into());
             }
             let button = Button::builder()
                 .css_classes(button_css_classes)
-                .label(desktop_file_config.alias.as_ref().map_or(desktop_file.name(), |alias| alias.into()))
+                .label(application.display_name.clone())
                 .build();
 
             let button_box = Box::builder()
@@ -88,7 +91,7 @@ pub fn start_ui(
                 .build();
             button.set_child(Some(&button_box));
 
-            if let Some(icon) = desktop_file.icon() {
+            if let Some(icon) = application.icon.clone() {
                 let icon_image = Image::builder()
                 .gicon(&icon)
                 .css_classes(vec![String::from("icon")])
@@ -99,20 +102,20 @@ pub fn start_ui(
             }
 
             button_box.append(&Label::builder()
-                .label(desktop_file_config.alias.as_ref().map_or(desktop_file.name(), |alias| alias.into()))
+                .label(application.display_name.clone())
                 .css_classes(vec![String::from("label")])
                 .build());
 
-            let desktop_id_for_closure = desktop_file_config.id.clone();
+            let desktop_id_for_closure = application.id.clone();
             let desktop_files_tx_for_closure = desktop_files_clone.clone();
             let shared_uri_clone_active = Rc::clone(&shared_files);
             let app_for_closure = app.clone();
             button.connect_clicked(move |_| {
                 let uri = shared_uri_clone_active.borrow().clone().unwrap_or_default();
-                if let Err(e) = desktop_files_tx_for_closure.send(DesktopFileOpenerCommand::Open(
+                if let Err(e) = desktop_files_tx_for_closure.send(ApplicationOpenerCommand::Open(
                     OpenParams {
                         uris: vec![uri],
-                        desktop_file_id: desktop_id_for_closure.clone(),
+                        application_id: desktop_id_for_closure.clone(),
                     },
                 )) {
                     error!("failed to send command to desktop file opener: {}", e);
@@ -134,7 +137,7 @@ pub fn start_ui(
             .css_classes(vec!["main-box".to_string()])
             .build();
 
-        if desktop_files_len == 0 {
+        if applications_len == 0 {
             let label = Label::builder()
                 .label("No desktop entries found or processed from the list.\nPlease check the paths in `DESKTOP_FILES` constant.")
                 .halign(Align::Center)
@@ -149,8 +152,8 @@ pub fn start_ui(
         let window = Window::builder()
             .application(app)
             .title(&application_name_clone)
-            .default_width(300)
-            .default_height(100)
+            .default_width(10)
+            .default_height(10)
             .decorated(false)
             .resizable(false)
             .css_classes(vec!["main-window"])

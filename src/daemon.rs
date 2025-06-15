@@ -13,13 +13,13 @@ use tracing::{debug, info};
 use crate::{
     config::Config,
     dbus::StatusCmdOutputApplication,
-    desktop_files::{DesktopFileOpenerCommand, resolve_desktop_files},
+    runner::{ApplicationOpenerCommand, resolve_desktop_files},
 };
 
 struct Daemon {
     cfg: Config,
     default_application_id: Option<String>,
-    desktop_files_tx: Sender<DesktopFileOpenerCommand>,
+    desktop_files_tx: Sender<ApplicationOpenerCommand>,
     toggle_ui_tx: async_channel::Sender<String>,
 }
 
@@ -33,12 +33,10 @@ impl Daemon {
 
             // send command to desktop file opener
             self.desktop_files_tx
-                .send(DesktopFileOpenerCommand::Open(
-                    crate::desktop_files::OpenParams {
-                        uris: vec![inputs.uri],
-                        desktop_file_id: desktop_file.id.clone(),
-                    },
-                ))
+                .send(ApplicationOpenerCommand::Open(crate::runner::OpenParams {
+                    uris: vec![inputs.uri],
+                    application_id: desktop_file.id.clone(),
+                }))
                 .map_err(|e| anyhow::anyhow!("failed to send command: {}", e))?;
 
             return Ok(crate::dbus::OpenCmdOutputs {
@@ -48,22 +46,16 @@ impl Daemon {
 
         // fallback to default application if set
         if let Some(default_id) = &self.default_application_id {
-            if let Some(desktop_file) = self
-                .cfg
-                .desktop_files
-                .iter()
-                .find(|df| &df.id == default_id)
+            if let Some(desktop_file) = self.cfg.applications.iter().find(|df| &df.id == default_id)
             {
                 info!("using default application: {:?}", desktop_file.id);
 
                 // send command to desktop file opener
                 self.desktop_files_tx
-                    .send(DesktopFileOpenerCommand::Open(
-                        crate::desktop_files::OpenParams {
-                            uris: vec![inputs.uri],
-                            desktop_file_id: desktop_file.id.clone(),
-                        },
-                    ))
+                    .send(ApplicationOpenerCommand::Open(crate::runner::OpenParams {
+                        uris: vec![inputs.uri],
+                        application_id: desktop_file.id.clone(),
+                    }))
                     .map_err(|e| anyhow::anyhow!("failed to send command: {}", e))?;
 
                 return Ok(crate::dbus::OpenCmdOutputs {
@@ -89,12 +81,13 @@ impl Daemon {
     ) -> Result<crate::dbus::StatusCmdOutputs> {
         debug!("status command received with inputs: {:?}", inputs);
 
+        // TODO: remove usage of resolve_desktop_files
         let resolved = resolve_desktop_files(&self.cfg);
 
         Ok(crate::dbus::StatusCmdOutputs {
             applications: self
                 .cfg
-                .desktop_files
+                .applications
                 .iter()
                 .map(|df| StatusCmdOutputApplication {
                     id: df.id.clone(),
@@ -137,7 +130,7 @@ impl Daemon {
 
         let desktop_file = self
             .cfg
-            .desktop_files
+            .applications
             .get(inputs.index as usize)
             .ok_or_else(|| anyhow::anyhow!("invalid index: {}", inputs.index))?;
 
@@ -150,7 +143,7 @@ impl Daemon {
 pub fn register_dbus(
     application_name: &str,
     cfg: Config,
-    desktop_files_tx: Sender<DesktopFileOpenerCommand>,
+    desktop_files_tx: Sender<ApplicationOpenerCommand>,
     toggle_ui_tx: async_channel::Sender<String>,
     shutdown_rx: Receiver<()>,
 ) -> Result<JoinHandle<()>> {
