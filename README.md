@@ -1,3 +1,12 @@
+# Choosme
+
+## Features
+
+- Stylizable (GTK4 CSS)
+- Multiple configs with `--id`
+- Open URIs per regexp or prefixes
+- Run custom commands
+
 ## Installation
 
 <p align="center">
@@ -127,6 +136,37 @@ Example for sway:
 exec {
     choosme daemon
 }
+```
+
+## CLI
+
+```bash
+Usage: choosme [OPTIONS] [URI] [COMMAND]
+
+Commands:
+  daemon
+  help    Print this message or the help of the given subcommand(s)
+
+Arguments:
+  [URI]  URI to open
+
+Options:
+      --id <ID>  If set, append the given id to the config file name This is useful for running multiple instances of choosme For example: `choosme --id screenshot`
+  -h, --help     Print help
+  -V, --version  Print version
+```
+
+```bash
+Usage: choosme daemon [OPTIONS]
+
+Options:
+      --set-default <SET_DEFAULT>  Set the default application index on fallback
+      --unset-default              Unset the default application on fallback, will open the UI instead
+      --status                     Print status of the daemon
+      --kill                       Kill the daemon
+      --set-default-next           Set the next default application index If no default application is set yet, this will set the first application as default If this is the last application, it will unset the default application
+      --waybar                     Waybar helper
+  -h, --help                       Print help
 ```
 
 ## Nice to have
