@@ -1,9 +1,11 @@
 use anyhow::Result;
 use regex::Regex;
 use serde::Deserialize;
-use std::{env, fs, io};
-use tracing::{error, info};
+use std::{env, ffi::OsStr, fs, io};
+use tracing::{debug, error, info};
 use xdg::BaseDirectories;
+
+const DEFAULT_CONFIG_ID: &str = "";
 
 pub fn read_css_file() -> Result<String> {
     let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
@@ -54,6 +56,25 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn read_all() -> Result<Vec<Self>> {
+        let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
+        let config_files = xdg_dirs.list_config_files("");
+
+        let mut configs = Vec::new();
+        let mut read_paths = Vec::new();
+        for file_path in config_files {
+            if file_path.extension() != Some(OsStr::new("toml")) {
+                continue; // skip non-toml files
+            }
+            let config_content = fs::read_to_string(&file_path)?;
+            let config: Config = toml::from_str(&config_content)?;
+            configs.push(config);
+            read_paths.push(file_path);
+        }
+        info!("read {} config files: {:?}", configs.len(), read_paths);
+        Ok(configs)
+    }
+
     pub fn read(id: Option<String>) -> Result<Self> {
         let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
         let file_path = match id {

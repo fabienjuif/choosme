@@ -6,6 +6,7 @@ mod runner;
 mod ui;
 
 use anyhow::{Result, format_err};
+use config::Config;
 use daemon::register_dbus;
 use gtk4::gio::prelude::ApplicationExtManual;
 use gtk4::glib::ExitCode;
@@ -39,6 +40,9 @@ fn run() -> Result<()> {
     // to ensure that all logs are flushed before the application exits.
     let _guard =
         init_logging(application_name).map_err(|e| format_err!("on init_logging(): {e}"))?;
+
+    let configs = Config::read_all()
+        .map_err(|e| format_err!("on Config::read_all(): {}", e))?;
 
     // parsing arguments
     let mut daemon_mode = false;
