@@ -13,7 +13,7 @@ pub fn start_ui(
     application_id: &str,
     application_name: &str,
     cfg: &Config,
-    desktop_files_tx: Sender<ApplicationOpenerCommand>,
+    applications_opener_tx: Sender<ApplicationOpenerCommand>,
     ui_rx: async_channel::Receiver<String>,
     daemon_mode: bool,
     uri: Option<String>,
@@ -35,7 +35,7 @@ pub fn start_ui(
 
     let application_name_clone = application_name.to_string();
     let cfg_clone = cfg.clone();
-    let desktop_files_clone = desktop_files_tx.clone();
+    let desktop_files_clone = applications_opener_tx.clone();
     application.connect_activate(move |app| {
         debug!("app activated");
 
@@ -122,9 +122,9 @@ pub fn start_ui(
                 }
                 info!("after sending command, quitting the app");
                 if daemon_mode {
-                app_for_closure.windows()
-                    .iter()
-                    .for_each(|window| window.hide());
+                    app_for_closure.windows()
+                        .iter()
+                        .for_each(|window| window.hide());
                 } else {
                     app_for_closure.quit();
                 }

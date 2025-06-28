@@ -183,7 +183,7 @@ fn run() -> Result<()> {
     // read config
     let cfg = config::Config::read(cli.id).map_err(|e| format_err!("on Config::read(): {}", e))?;
 
-    let (jh_dekstop_files, desktop_files_tx) = start_applications_opener(cfg.clone());
+    let (jh_applications_opener, applications_opener_tx) = start_applications_opener(cfg.clone());
 
     // if we have an uri maybe we can open it?
     let resolved = if let Some(uri) = &cli.uri {
@@ -192,7 +192,7 @@ fn run() -> Result<()> {
             if desktop_file.match_uri(uri) {
                 debug!("found matching desktop file: {}", desktop_file.id);
                 // we have a matching desktop file, we can open the url
-                if let Err(e) = desktop_files_tx.send(runner::ApplicationOpenerCommand::Open(
+                if let Err(e) = applications_opener_tx.send(runner::ApplicationOpenerCommand::Open(
                     runner::OpenParams {
                         uris: vec![uri.clone()],
                         application_id: desktop_file.id.clone(),
@@ -214,13 +214,13 @@ fn run() -> Result<()> {
     let (ui_tx, ui_rx) = async_channel::bounded::<String>(1);
 
     // register dbus in daemon mode
-    let desktop_files_tx_clone = desktop_files_tx.clone();
+    let applications_opener_clone = applications_opener_tx.clone();
     let jh_dbus = if daemon_mode && !resolved {
         Some(
             register_dbus(
                 application_name,
                 cfg.clone(),
-                desktop_files_tx_clone,
+                applications_opener_clone,
                 ui_tx.clone(),
                 shutdown_signal_rx,
             )
@@ -235,12 +235,12 @@ fn run() -> Result<()> {
 
     // start the ui
     if !resolved {
-        let desktop_files_tx_clone = desktop_files_tx.clone();
+        let applications_opener_clone = applications_opener_tx.clone();
         let ui_application = start_ui(
             &application_id,
             application_name,
             &cfg,
-            desktop_files_tx_clone,
+            applications_opener_clone,
             ui_rx,
             daemon_mode,
             cli.uri,
@@ -270,12 +270,12 @@ fn run() -> Result<()> {
     } else {
         info!("no dbus thread to wait for");
     }
-    desktop_files_tx
+    applications_opener_tx
         .send(runner::ApplicationOpenerCommand::Quit)
         .unwrap_or_else(|e| {
             error!("failed to send quit command to desktop file opener: {}", e);
         });
-    jh_dekstop_files.join().unwrap_or_else(|e| {
+    jh_applications_opener.join().unwrap_or_else(|e| {
         error!("desktop file opener thread failed: {:?}", e);
     });
     info!("desktop file opener thread closed!");
