@@ -88,7 +88,7 @@ pub enum ToggleStatusParseError {
 impl std::fmt::Display for ToggleStatusParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ToggleStatusParseError::UnknownStatus(s) => write!(f, "Unknown status: {}", s),
+            ToggleStatusParseError::UnknownStatus(s) => write!(f, "Unknown status: {s}"),
             ToggleStatusParseError::EmptyString => write!(f, "Empty string provided"),
         }
     }

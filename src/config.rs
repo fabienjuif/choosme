@@ -1,11 +1,11 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use regex::Regex;
 use serde::Deserialize;
-use std::{env, ffi::OsStr, fs, io};
-use tracing::{debug, error, info};
+use std::{collections::HashMap, env, ffi::OsStr, fs, io};
+use tracing::{error, info};
 use xdg::BaseDirectories;
 
-const DEFAULT_CONFIG_ID: &str = "";
+pub const DEFAULT_CONFIG_ID: &str = "";
 
 pub fn read_css_file() -> Result<String> {
     let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
@@ -56,56 +56,51 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn read_all() -> Result<Vec<Self>> {
+    pub fn read_all() -> Result<HashMap<String, Self>> {
         let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
         let config_files = xdg_dirs.list_config_files("");
 
-        let mut configs = Vec::new();
+        let mut configs = HashMap::new();
         let mut read_paths = Vec::new();
         for file_path in config_files {
             if file_path.extension() != Some(OsStr::new("toml")) {
                 continue; // skip non-toml files
             }
             let config_content = fs::read_to_string(&file_path)?;
-            let config: Config = toml::from_str(&config_content)?;
-            configs.push(config);
+            let mut config: Config = toml::from_str(&config_content)?;
+            for application_config in &mut config.applications {
+                // TODO: might compiple regexps here
+
+                if application_config.desktop_file.is_none() && application_config.command.is_none()
+                {
+                    error!("application config must have either desktop_file or command set");
+                }
+
+                if let Some(id) = application_config
+                    .alias
+                    .clone()
+                    .or_else(|| application_config.desktop_file.clone())
+                {
+                    application_config.id = id
+                } else {
+                    error!("application config must have either alias or desktop_file set");
+                }
+            }
+
+            let stem = file_path
+                .file_stem()
+                .and_then(OsStr::to_str)
+                .context("failed to get file stem")?;
+            let id = if stem == "config" || stem.is_empty() {
+                DEFAULT_CONFIG_ID
+            } else {
+                stem.trim_start_matches("config-")
+            };
+            configs.insert(id.to_string(), config);
             read_paths.push(file_path);
         }
         info!("read {} config files: {:?}", configs.len(), read_paths);
         Ok(configs)
-    }
-
-    pub fn read(id: Option<String>) -> Result<Self> {
-        let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
-        let file_path = match id {
-            Some(id) => format!("config-{}.toml", id),
-            None => "config.toml".into(),
-        };
-        let config_path = xdg_dirs.place_config_file(file_path)?;
-        info!("config path: {}", config_path.display());
-
-        let config_content = fs::read_to_string(&config_path)?;
-        let mut config: Config = toml::from_str(&config_content)?;
-
-        for application_config in &mut config.applications {
-            // TODO: might compiple regexps here
-
-            if application_config.desktop_file.is_none() && application_config.command.is_none() {
-                error!("application config must have either desktop_file or command set");
-            }
-
-            if let Some(id) = application_config
-                .alias
-                .clone()
-                .or_else(|| application_config.desktop_file.clone())
-            {
-                application_config.id = id
-            } else {
-                error!("application config must have either alias or desktop_file set");
-            }
-        }
-
-        Ok(config)
     }
 
     pub fn find_matching_desktop_file(&self, uri: &str) -> Option<&ApplicationConfig> {

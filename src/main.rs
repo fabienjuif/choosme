@@ -5,8 +5,8 @@ mod dbus;
 mod runner;
 mod ui;
 
-use anyhow::{Result, format_err};
-use config::Config;
+use anyhow::{Result, bail, format_err};
+use config::{Config, DEFAULT_CONFIG_ID};
 use daemon::register_dbus;
 use gtk4::gio::prelude::ApplicationExtManual;
 use gtk4::glib::ExitCode;
@@ -34,15 +34,14 @@ fn run() -> Result<()> {
     // I have to make a different name otherwise it collides with daemon mode.
     // Which makes me think I could reuse the ui application to register dbus methods maybe?
     //     ui_application.dbus_connection()
-    let application_id = format!("juif.fabien.{}.client", application_name);
+    let application_id = format!("juif.fabien.{application_name}.client");
 
     // we keep the guard around for the duration of the application
     // to ensure that all logs are flushed before the application exits.
     let _guard =
         init_logging(application_name).map_err(|e| format_err!("on init_logging(): {e}"))?;
 
-    let configs = Config::read_all()
-        .map_err(|e| format_err!("on Config::read_all(): {}", e))?;
+    let configs = Config::read_all().map_err(|e| format_err!("on Config::read_all(): {}", e))?;
 
     // parsing arguments
     let mut daemon_mode = false;
@@ -185,7 +184,10 @@ fn run() -> Result<()> {
     // if we are here, it means we are either in daemon mode or we unsucessfully tried to connect to dbus
 
     // read config
-    let cfg = config::Config::read(cli.id).map_err(|e| format_err!("on Config::read(): {}", e))?;
+    let cfg_id = &cli.id.unwrap_or_else(|| DEFAULT_CONFIG_ID.to_string());
+    let Some(cfg) = configs.get(cfg_id) else {
+        bail!("no config found for id: {}", cfg_id);
+    };
 
     let (jh_applications_opener, applications_opener_tx) = start_applications_opener(cfg.clone());
 
@@ -243,7 +245,7 @@ fn run() -> Result<()> {
         let ui_application = start_ui(
             &application_id,
             application_name,
-            &cfg,
+            cfg,
             applications_opener_clone,
             ui_rx,
             daemon_mode,
