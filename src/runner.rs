@@ -2,8 +2,7 @@
 // Module that handles launching applications based on desktop files or commands.
 // --------------------------------------------------------
 
-use gdk4::gio::{AppLaunchContext};
-use gtk4::gio::prelude::AppInfoExt;
+use gdk4::gio::AppLaunchContext;
 use std::{
     sync::mpsc::{self, Sender},
     thread::JoinHandle,

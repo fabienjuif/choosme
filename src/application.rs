@@ -2,36 +2,8 @@ use anyhow::{Context, Result, format_err};
 use gdk4::gio::{AppLaunchContext, prelude::IconExt};
 use gtk4::gio::{DesktopAppInfo, prelude::AppInfoExt};
 use regex::Regex;
-use std::{
-    collections::HashMap,
-    env,
-    path::PathBuf,
-};
-use tracing::{debug, error, warn};
-
-// TODO: make it configurable
-const DEFAULT_DESKTOP_APP_LAUNCHER: &str = "gtk-launch";
-
-
-// TODO: make a read only singleton shared memory?
-//     : for now this is not possible because of gio *void
-pub fn from_config(config: &crate::config::Config) -> HashMap<String, Application> {
-    let mut res = HashMap::new();
-    for application_config in &config.applications {
-        match Application::new_from_config(application_config) {
-            Ok(application) => {
-                res.insert(application.id.clone(), application);
-            }
-            Err(e) => {
-                error!(
-                    "failed to create application from config: {}: {}",
-                    application_config.id, e
-                );
-            }
-        }
-    }
-    res
-}
+use std::{env, path::PathBuf};
+use tracing::{debug, warn};
 
 /// Represents an application that can be launched.
 /// It can either be a desktop application with a `.desktop` file or a command that can be run.
@@ -94,7 +66,20 @@ impl Application {
             app_info.launch_uris(uris, context)?;
             return Ok(());
         }
-        // TODO: move exec here?
+
+        if let Some(command) = &self.command {
+            debug!(
+                "running command '{}' for application '{}' with URIs: {:?}",
+                command, self.id, uris
+            );
+            let command_str = command.replace("%u", &uris.join(" "));
+            // we spawn and forget
+            // TODO: maybe spawn in a new thread + log?
+            std::process::Command::new("sh")
+                .args(vec!["-c", &command_str])
+                .spawn()?;
+            return Ok(());
+        }
 
         Err(anyhow::anyhow!(
             "no desktop app info or command to run for application '{}'",
