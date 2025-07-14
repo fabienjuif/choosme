@@ -10,7 +10,7 @@ pub const DEST: &str = "juif.fabien.choosme";
 // dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Open string:"http://example.com"
 
 pub const OPEN_METHOD: &str = "Open";
-pub const OPEN_METHOD_INPUTS: (&str, &str,) = ("realm_id", "uri",);
+pub const OPEN_METHOD_INPUTS: (&str, &str) = ("realm_id", "uri");
 pub const OPEN_METHOD_OUTPUTS: (&str,) = ("status",);
 
 // dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Status
@@ -28,7 +28,7 @@ pub const KILL_METHOD_OUTPUTS: () = ();
 // dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.SetDefault int64:1
 
 pub const SET_DEFAULT_METHOD: &str = "SetDefault";
-pub const SET_DEFAULT_METHOD_INPUTS: (&str, &str,) = ("realm_id", "index",);
+pub const SET_DEFAULT_METHOD_INPUTS: (&str, &str) = ("realm_id", "index");
 pub const SET_DEFAULT_METHOD_OUTPUTS: () = ();
 
 #[derive(Debug)]
@@ -38,12 +38,15 @@ pub struct OpenCmdInputs {
 }
 
 impl OpenCmdInputs {
-    pub fn from_dbus_input(input: (String, String,)) -> Self {
-        OpenCmdInputs { realm_id: input.0, uri: input.1 }
+    pub fn from_dbus_input(input: (String, String)) -> Self {
+        OpenCmdInputs {
+            realm_id: input.0,
+            uri: input.1,
+        }
     }
 
-    pub fn to_dbus_input(&self) -> (String, String,) {
-        (self.realm_id.clone(), self.uri.clone(),)
+    pub fn to_dbus_input(&self) -> (String, String) {
+        (self.realm_id.clone(), self.uri.clone())
     }
 }
 
@@ -55,7 +58,7 @@ pub struct OpenCmdOutputs {
 impl OpenCmdOutputs {
     pub fn from_dbus_output(output: (String,)) -> Result<Self, ToggleStatusParseError> {
         let status = OpenCmdOutputsStatus::try_from(output.0)?;
-        Ok(OpenCmdOutputs { status  })
+        Ok(OpenCmdOutputs { status })
     }
 
     pub fn to_dbus_output(&self) -> (String,) {
@@ -119,9 +122,7 @@ pub struct StatusCmdInputs {
 
 impl StatusCmdInputs {
     pub fn from_dbus_input(_input: (String,)) -> Self {
-        StatusCmdInputs {
-            realm_id: _input.0,
-        }
+        StatusCmdInputs { realm_id: _input.0 }
     }
 
     pub fn to_dbus_input(&self) -> (String,) {
@@ -209,13 +210,16 @@ pub struct SetDefaultCmdInputs {
 }
 
 impl SetDefaultCmdInputs {
-    pub fn from_dbus_input(input: (String, i64,)) -> Self {
-        Self { realm_id: input.0, index: input.1 }
+    pub fn from_dbus_input(input: (String, i64)) -> Self {
+        Self {
+            realm_id: input.0,
+            index: input.1,
+        }
     }
 
     #[allow(clippy::unused_unit)]
-    pub fn to_dbus_input(&self) -> (String, i64,) {
-        (self.realm_id.clone(), self.index,)
+    pub fn to_dbus_input(&self) -> (String, i64) {
+        (self.realm_id.clone(), self.index)
     }
 }
 
@@ -294,7 +298,7 @@ impl DBUSClient {
         debug!("sending set_default command with index: {}", index);
         let msg = SetDefaultCmdInputs {
             realm_id: realm_id.to_string(),
-            index
+            index,
         };
         #[allow(clippy::let_unit_value)]
         let result = self

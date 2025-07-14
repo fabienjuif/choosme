@@ -31,13 +31,7 @@ impl Realm {
                 }
             }
 
-            realms.insert(
-                id.clone(),
-                Realm {
-                    id,
-                    applications,
-                },
-            );
+            realms.insert(id.clone(), Realm { id, applications });
         }
         Ok(realms)
     }

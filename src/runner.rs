@@ -14,7 +14,10 @@ use std::{
 };
 use tracing::{debug, error, info, warn};
 
-use crate::{config::Config, realm::{self, Realm}};
+use crate::{
+    config::Config,
+    realm::{self, Realm},
+};
 
 #[derive(Debug)]
 pub struct OpenParams {
@@ -77,7 +80,11 @@ pub fn start_applications_opener() -> (JoinHandle<()>, Sender<ApplicationOpenerC
                         .map(|s| s.as_str())
                         .collect::<Vec<&str>>();
 
-                    let Some(application) = realm.applications.iter().find(|app| app.id == params.application_id) else {
+                    let Some(application) = realm
+                        .applications
+                        .iter()
+                        .find(|app| app.id == params.application_id)
+                    else {
                         error!("no application found for id: {}", params.application_id);
                         continue;
                     };
@@ -99,4 +106,3 @@ pub fn start_applications_opener() -> (JoinHandle<()>, Sender<ApplicationOpenerC
 
     (jh, tx)
 }
-

@@ -1,20 +1,22 @@
 use std::{
-    collections::HashMap, sync::mpsc::{Receiver, Sender}, thread::{self, JoinHandle}, time::Duration
+    collections::HashMap,
+    hash::Hash,
+    sync::mpsc::{Receiver, Sender},
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
-use anyhow::{anyhow, Context, Result, format_err};
+use anyhow::{Context, Result, anyhow, format_err};
 use dbus::{MethodErr, blocking::Connection, channel::MatchingReceiver};
-use dbus_crossroads::{Context, Crossroads};
-use gtk4::gio::prelude::{AppInfoExt, IconExt};
+use dbus_crossroads::Crossroads;
+use gtk4::gio::prelude::IconExt;
 use tracing::{debug, info};
 
-use crate::{
-    config::Config, dbus::StatusCmdOutputApplication, realm::Realm, runner::{resolve_desktop_files, ApplicationOpenerCommand}
-};
+use crate::{dbus::StatusCmdOutputApplication, realm::Realm, runner::ApplicationOpenerCommand};
 
 struct Daemon {
     realms: HashMap<String, Realm>,
-    default_application_id: Option<String>,
+    default_applications_ids: HashMap<String, String>,
     application_opener_tx: Sender<ApplicationOpenerCommand>,
     toggle_ui_tx: async_channel::Sender<String>,
 }
@@ -46,7 +48,7 @@ impl Daemon {
         }
 
         // fallback to default application if set
-        if let Some(default_id) = &self.default_application_id {
+        if let Some(default_id) = self.default_applications_ids.get(&inputs.realm_id) {
             if let Some(application) = realm.applications.iter().find(|df| &df.id == default_id) {
                 info!("using default application: {:?}", application.id);
 
@@ -82,25 +84,26 @@ impl Daemon {
     ) -> Result<crate::dbus::StatusCmdOutputs> {
         debug!("status command received with inputs: {:?}", inputs);
 
-        // TODO: remove usage of resolve_desktop_files
-        let resolved = resolve_desktop_files(&self.cfg);
+        let realm = self
+            .realms
+            .get(&inputs.realm_id)
+            .context(format_err!("realm not found: {}", inputs.realm_id))?;
+
+        let default_realm_id = self.default_applications_ids.get(&inputs.realm_id);
 
         Ok(crate::dbus::StatusCmdOutputs {
-            applications: self
-                .cfg
+            applications: realm
                 .applications
                 .iter()
-                .map(|df| StatusCmdOutputApplication {
-                    id: df.id.clone(),
-                    name: df.alias.clone().unwrap_or_else(|| df.id.clone()),
-                    is_default: self.default_application_id.as_ref() == Some(&df.id),
-                    icon: resolved
-                        .get(&df.id)
-                        .and_then(|d| {
-                            d.icon()
-                                .map(|i| i.to_string().map_or("".to_string(), |i| i.into()))
-                        })
-                        .unwrap_or("".to_string()),
+                .map(|app| StatusCmdOutputApplication {
+                    id: app.id.clone(),
+                    name: app.display_name.clone(),
+                    is_default: default_realm_id == Some(&app.id),
+                    icon: app
+                        .icon
+                        .as_ref()
+                        .map(|i| i.to_string().map_or("".to_string(), |i| i.into()))
+                        .unwrap_or_default(),
                 })
                 .collect(),
         })
@@ -125,17 +128,24 @@ impl Daemon {
         debug!("set_default command received with inputs: {:?}", inputs);
 
         if inputs.index < 0 {
-            self.default_application_id = None;
+            self.default_applications_ids.remove(&inputs.realm_id);
             return Ok(crate::dbus::SetDefaultCmdOutputs {});
         }
 
-        let desktop_file = self
-            .cfg
+        let realm = self
+            .realms
+            .get(&inputs.realm_id)
+            .context(format_err!("realm not found: {}", inputs.realm_id))?;
+        let application = realm
             .applications
             .get(inputs.index as usize)
-            .ok_or_else(|| anyhow::anyhow!("invalid index: {}", inputs.index))?;
+            .context(format_err!(
+                "application not found at index: {}",
+                inputs.index
+            ))?;
 
-        self.default_application_id = Some(desktop_file.id.clone());
+        self.default_applications_ids
+            .insert(inputs.realm_id.clone(), application.id.clone());
 
         Ok(crate::dbus::SetDefaultCmdOutputs {})
     }
@@ -153,8 +163,8 @@ pub fn register_dbus(
     // preparing daemon (thread safe is necessary for dbus)
     // TODO:
     let daemon = Daemon {
-        cfg,
-        default_application_id: None,
+        realms,
+        default_applications_ids: HashMap::new(),
         application_opener_tx: desktop_files_tx,
         toggle_ui_tx,
     };

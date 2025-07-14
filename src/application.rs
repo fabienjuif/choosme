@@ -6,7 +6,10 @@ use std::{
     collections::HashMap,
     env,
     path::PathBuf,
-    sync::{mpsc::{self, Sender}, Arc},
+    sync::{
+        Arc,
+        mpsc::{self, Sender},
+    },
     thread::JoinHandle,
 };
 use tracing::{debug, error, info, warn};

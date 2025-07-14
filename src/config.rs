@@ -102,12 +102,6 @@ impl Config {
         info!("read {} config files: {:?}", configs.len(), read_paths);
         Ok(configs)
     }
-
-    pub fn find_matching_desktop_file(&self, uri: &str) -> Option<&ApplicationConfig> {
-        self.applications.iter().find(|df| df.match_uri(uri))
-    }
 }
 
-impl ApplicationConfig {
-
-}
+impl ApplicationConfig {}

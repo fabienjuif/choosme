@@ -1,13 +1,13 @@
+mod application;
 mod cli;
 mod config;
 mod daemon;
 mod dbus;
+mod realm;
 mod runner;
 mod ui;
-mod application;
-mod realm;
 
-use anyhow::{bail, format_err, Context, Result};
+use anyhow::{Context, Result, bail, format_err};
 use config::{Config, DEFAULT_CONFIG_ID};
 use daemon::register_dbus;
 use gtk4::gio::prelude::ApplicationExtManual;
@@ -31,10 +31,9 @@ fn main() {
     //     ui_application.dbus_connection()
     let application_id = format!("juif.fabien.{application_name}.client");
 
-     // we keep the guard around for the duration of the application
+    // we keep the guard around for the duration of the application
     // to ensure that all logs are flushed before the application exits.
-    let _guard =
-        init_logging(application_name).map_err(|e| format_err!("on init_logging(): {e}"));
+    let _guard = init_logging(application_name).map_err(|e| format_err!("on init_logging(): {e}"));
 
     if let Err(e) = run(&application_id, application_name) {
         error!("{e}");
@@ -158,7 +157,6 @@ fn run(application_id: &str, application_name: &str) -> Result<()> {
             );
         }
     }
-
 
     // if no daemon mode, we try to connect to it
     // and if we fail we fallback with local resolution (and eventually start the UI onf fallback)

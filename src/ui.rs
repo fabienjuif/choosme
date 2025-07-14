@@ -103,10 +103,12 @@ pub fn start_ui(
             let desktop_files_tx_for_closure = desktop_files_clone.clone();
             let shared_uri_clone_active = Rc::clone(&shared_files);
             let app_for_closure = app.clone();
+            let realm_clone = realm_clone.clone();
             button.connect_clicked(move |_| {
                 let uri = shared_uri_clone_active.borrow().clone().unwrap_or_default();
                 if let Err(e) = desktop_files_tx_for_closure.send(ApplicationOpenerCommand::Open(
                     OpenParams {
+                        realm_id: realm_clone.id.clone(),
                         uris: vec![uri],
                         application_id: desktop_id_for_closure.clone(),
                     },
