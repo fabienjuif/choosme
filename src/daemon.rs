@@ -1,15 +1,13 @@
 use std::{
     collections::HashMap,
-    hash::Hash,
     sync::mpsc::{Receiver, Sender},
     thread::{self, JoinHandle},
     time::Duration,
 };
 
-use anyhow::{Context, Result, anyhow, format_err};
+use anyhow::{Context as _, Result, format_err};
 use dbus::{MethodErr, blocking::Connection, channel::MatchingReceiver};
-use dbus_crossroads::Crossroads;
-use gtk4::gio::prelude::IconExt;
+use dbus_crossroads::{Context, Crossroads};
 use tracing::{debug, info};
 
 use crate::{dbus::StatusCmdOutputApplication, realm::Realm, runner::ApplicationOpenerCommand};
@@ -99,11 +97,7 @@ impl Daemon {
                     id: app.id.clone(),
                     name: app.display_name.clone(),
                     is_default: default_realm_id == Some(&app.id),
-                    icon: app
-                        .icon
-                        .as_ref()
-                        .map(|i| i.to_string().map_or("".to_string(), |i| i.into()))
-                        .unwrap_or_default(),
+                    icon: app.icon_name.clone().unwrap_or_default(),
                 })
                 .collect(),
         })
@@ -161,7 +155,6 @@ pub fn register_dbus(
     debug!("registering dbus for application: {}", application_name);
 
     // preparing daemon (thread safe is necessary for dbus)
-    // TODO:
     let daemon = Daemon {
         realms,
         default_applications_ids: HashMap::new(),
@@ -178,7 +171,7 @@ pub fn register_dbus(
             crate::dbus::OPEN_METHOD,
             crate::dbus::OPEN_METHOD_INPUTS,
             crate::dbus::OPEN_METHOD_OUTPUTS,
-            move |_: &mut Context, daemon: &mut Daemon, params: (String,)| {
+            move |_: &mut Context, daemon: &mut Daemon, params: (String, String)| {
                 let inputs = crate::dbus::OpenCmdInputs::from_dbus_input(params);
                 let output = daemon
                     .open(inputs)
@@ -192,7 +185,7 @@ pub fn register_dbus(
             crate::dbus::STATUS_METHOD,
             crate::dbus::STATUS_METHOD_INPUTS,
             crate::dbus::STATUS_METHOD_OUTPUTS,
-            move |_: &mut Context, daemon: &mut Daemon, params: ()| {
+            move |_: &mut Context, daemon: &mut Daemon, params: (String,)| {
                 let inputs = crate::dbus::StatusCmdInputs::from_dbus_input(params);
                 let output = daemon
                     .status(inputs)
@@ -220,7 +213,7 @@ pub fn register_dbus(
             crate::dbus::SET_DEFAULT_METHOD,
             crate::dbus::SET_DEFAULT_METHOD_INPUTS,
             crate::dbus::SET_DEFAULT_METHOD_OUTPUTS,
-            move |_: &mut Context, daemon: &mut Daemon, params: (i64,)| {
+            move |_: &mut Context, daemon: &mut Daemon, params: (String, i64)| {
                 let inputs = crate::dbus::SetDefaultCmdInputs::from_dbus_input(params);
                 daemon
                     .set_default(inputs)

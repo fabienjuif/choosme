@@ -1,20 +1,17 @@
-use anyhow::Result;
-use gdk4::gio::{self, AppLaunchContext};
+use anyhow::{Context, Result, format_err};
+use gdk4::gio::{AppLaunchContext, prelude::IconExt};
 use gtk4::gio::{DesktopAppInfo, prelude::AppInfoExt};
 use regex::Regex;
 use std::{
     collections::HashMap,
     env,
     path::PathBuf,
-    sync::{
-        Arc,
-        mpsc::{self, Sender},
-    },
-    thread::JoinHandle,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
-use crate::config::Config;
+// TODO: make it configurable
+const DEFAULT_DESKTOP_APP_LAUNCHER: &str = "gtk-launch";
+
 
 // TODO: make a read only singleton shared memory?
 //     : for now this is not possible because of gio *void
@@ -42,11 +39,11 @@ pub fn from_config(config: &crate::config::Config) -> HashMap<String, Applicatio
 pub struct Application {
     pub id: String,
     pub display_name: String,
-    pub icon: Option<gio::Icon>,
+    pub desktop_file: Option<String>,
+    pub icon_name: Option<String>,
+
     prefixes: Option<Vec<String>>,
     regexps: Option<Vec<String>>,
-
-    desktop_app_info: Option<DesktopAppInfo>,
     command: Option<String>,
 }
 
@@ -54,9 +51,20 @@ impl Application {
     pub fn new_from_config(application_config: &crate::config::ApplicationConfig) -> Result<Self> {
         let desktop_app_info = resolve_desktop_file_from_config(application_config);
 
+        let mut icon_name = None;
+        if let Some(app_info) = &desktop_app_info {
+            icon_name = Some(
+                app_info
+                    .icon()
+                    .as_ref()
+                    .map(|i| i.to_string().map_or("".to_string(), |i| i.into()))
+                    .unwrap_or_default(),
+            );
+        }
+
         Ok(Application {
             id: application_config.id.clone(),
-            desktop_app_info: desktop_app_info.clone(),
+            desktop_file: application_config.desktop_file.clone(),
             command: application_config.command.clone(),
             prefixes: application_config.prefixes.clone(),
             regexps: application_config.regexps.clone(),
@@ -65,7 +73,7 @@ impl Application {
                 .clone()
                 .or_else(|| desktop_app_info.as_ref().map(|d| d.name().into()))
                 .unwrap_or_else(|| application_config.id.clone()),
-            icon: desktop_app_info.and_then(|d| d.icon()),
+            icon_name,
         })
     }
 
@@ -74,30 +82,31 @@ impl Application {
     /// If the application is a command, it will run the command with the URIs as arguments.
     /// If the application is neither, it will return an error.
     pub fn run(&self, uris: &[&str], context: Option<&AppLaunchContext>) -> Result<()> {
-        if let Some(app_info) = &self.desktop_app_info {
-            debug!("launching application '{}' with URIs: {:?}", self.id, uris);
+        if let Some(desktop_file) = &self.desktop_file {
+            debug!(
+                "launching desktop application '{}' with URIs: {:?}",
+                self.id, uris
+            );
+            let app_info = self.desktop_app_info().context(format_err!(
+                "failed to create DesktopAppInfo from file: {}",
+                desktop_file
+            ))?;
             app_info.launch_uris(uris, context)?;
             return Ok(());
         }
-
-        if let Some(command) = &self.command {
-            debug!(
-                "running command '{}' for application '{}' with URIs: {:?}",
-                command, self.id, uris
-            );
-            let command_str = command.replace("%u", &uris.join(" "));
-            // we spawn and forget
-            // TODO: maybe spawn in a new thread + log?
-            std::process::Command::new("sh")
-                .args(vec!["-c", &command_str])
-                .spawn()?;
-            return Ok(());
-        }
+        // TODO: move exec here?
 
         Err(anyhow::anyhow!(
             "no desktop app info or command to run for application '{}'",
             self.id
         ))
+    }
+
+    pub fn desktop_app_info(&self) -> Option<DesktopAppInfo> {
+        if let Some(desktop_file) = &self.desktop_file {
+            return DesktopAppInfo::from_filename(desktop_file);
+        }
+        None
     }
 
     pub fn match_uri(&self, uri: &str) -> bool {

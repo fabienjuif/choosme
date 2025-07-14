@@ -1,4 +1,4 @@
-use crate::config::{Config, read_css_file};
+use crate::config::read_css_file;
 use crate::realm::Realm;
 use crate::runner::{ApplicationOpenerCommand, OpenParams};
 use gtk4::gio::{self};
@@ -84,13 +84,13 @@ pub fn start_ui(
                 .build();
             button.set_child(Some(&button_box));
 
-            if let Some(icon) = application.icon.clone() {
+            if let Some(icon) = application.desktop_app_info().and_then(|info| info.icon()) {
                 let icon_image = Image::builder()
-                .gicon(&icon)
-                .css_classes(vec![String::from("icon")])
-                    .pixel_size(48)
-                    .margin_end(12)
-                    .build();
+                    .gicon(&icon)
+                    .css_classes(vec![String::from("icon")])
+                        .pixel_size(48)
+                        .margin_end(12)
+                        .build();
                 button_box.append(&icon_image);
             }
 

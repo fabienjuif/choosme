@@ -2,22 +2,15 @@
 // Module that handles launching applications based on desktop files or commands.
 // --------------------------------------------------------
 
-use anyhow::Result;
-use gdk4::gio::{self, AppLaunchContext};
-use gtk4::gio::{DesktopAppInfo, prelude::AppInfoExt};
+use gdk4::gio::{AppLaunchContext};
+use gtk4::gio::prelude::AppInfoExt;
 use std::{
-    collections::HashMap,
-    env,
-    path::PathBuf,
     sync::mpsc::{self, Sender},
     thread::JoinHandle,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 
-use crate::{
-    config::Config,
-    realm::{self, Realm},
-};
+use crate::realm::{self};
 
 #[derive(Debug)]
 pub struct OpenParams {

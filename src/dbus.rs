@@ -16,7 +16,7 @@ pub const OPEN_METHOD_OUTPUTS: (&str,) = ("status",);
 // dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Status
 
 pub const STATUS_METHOD: &str = "Status";
-pub const STATUS_METHOD_INPUTS: (&str) = ("realm_id");
+pub const STATUS_METHOD_INPUTS: (&str,) = ("realm_id",);
 pub const STATUS_METHOD_OUTPUTS: (&str,) = ("applications",);
 
 // dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Kill

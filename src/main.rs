@@ -7,8 +7,8 @@ mod realm;
 mod runner;
 mod ui;
 
-use anyhow::{Context, Result, bail, format_err};
-use config::{Config, DEFAULT_CONFIG_ID};
+use anyhow::{Context, Result, format_err};
+use config::DEFAULT_CONFIG_ID;
 use daemon::register_dbus;
 use gtk4::gio::prelude::ApplicationExtManual;
 use gtk4::glib::ExitCode;
@@ -242,7 +242,7 @@ fn run(application_id: &str, application_name: &str) -> Result<()> {
     if !resolved {
         let applications_opener_clone = applications_opener_tx.clone();
         let ui_application = start_ui(
-            &application_id,
+            application_id,
             application_name,
             realm,
             applications_opener_clone,

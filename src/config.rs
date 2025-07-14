@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use regex::Regex;
 use serde::Deserialize;
 use std::{collections::HashMap, env, ffi::OsStr, fs, io};
 use tracing::{error, info};
