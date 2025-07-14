@@ -34,8 +34,14 @@ impl Application {
             );
         }
 
+        let id = application_config
+            .alias
+            .clone()
+            .or_else(|| application_config.desktop_file.clone())
+            .context("application config must have either alias or desktop_file set")?;
+
         Ok(Application {
-            id: application_config.id.clone(),
+            id: id.clone(),
             desktop_file: application_config.desktop_file.clone(),
             command: application_config.command.clone(),
             prefixes: application_config.prefixes.clone(),
@@ -44,7 +50,7 @@ impl Application {
                 .alias
                 .clone()
                 .or_else(|| desktop_app_info.as_ref().map(|d| d.name().into()))
-                .unwrap_or_else(|| application_config.id.clone()),
+                .unwrap_or(id),
             icon_name,
         })
     }

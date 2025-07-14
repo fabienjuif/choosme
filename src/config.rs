@@ -26,22 +26,14 @@ pub fn read_css_file() -> Result<String> {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ApplicationConfig {
-    /// used to identify the desktop file in the config
-    /// this is either the path or the name
-    /// this is for internal use only, not displayed to the user
-    #[serde(skip_serializing)]
-    #[serde(skip_deserializing)]
-    pub id: String,
     /// if set, this name is printed instead of the one in the desktop file
     pub alias: Option<String>,
-
     /// path or name of the desktop file
     pub desktop_file: Option<String>,
     /// if set, this command is run instead of the desktop file
     /// this is useful for applications that do not have a desktop file
     /// or for custom commands
     pub command: Option<String>,
-
     /// if set, these prefixes are used to match the URI
     pub prefixes: Option<Vec<String>>,
     /// if set, these regexps are used to match the URI
@@ -73,16 +65,6 @@ impl Config {
                 if application_config.desktop_file.is_none() && application_config.command.is_none()
                 {
                     error!("application config must have either desktop_file or command set");
-                }
-
-                if let Some(id) = application_config
-                    .alias
-                    .clone()
-                    .or_else(|| application_config.desktop_file.clone())
-                {
-                    application_config.id = id
-                } else {
-                    error!("application config must have either alias or desktop_file set");
                 }
             }
 

@@ -24,10 +24,7 @@ impl Realm {
             for application in &config.applications {
                 match Application::new_from_config(application) {
                     Ok(app) => applications.push(app),
-                    Err(e) => error!(
-                        "failed to create application from config {}: {}: {}",
-                        id, application.id, e
-                    ),
+                    Err(e) => error!("failed to create application from config {}: {}", id, e),
                 }
             }
 
