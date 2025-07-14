@@ -1,5 +1,6 @@
 use crate::config::{Config, read_css_file};
-use crate::runner::{ApplicationOpenerCommand, OpenParams, from_config};
+use crate::realm::Realm;
+use crate::runner::{ApplicationOpenerCommand, OpenParams};
 use gtk4::gio::{self};
 use gtk4::{self as gtk, Align, Box, Image, Label, ListBox, Orientation, SelectionMode, Window};
 use gtk4::{Application, Button};
@@ -12,7 +13,7 @@ use tracing::{debug, error, info, warn};
 pub fn start_ui(
     application_id: &str,
     application_name: &str,
-    cfg: &Config,
+    cfg: &Realm,
     applications_opener_tx: Sender<ApplicationOpenerCommand>,
     ui_rx: async_channel::Receiver<String>,
     daemon_mode: bool,
@@ -34,7 +35,7 @@ pub fn start_ui(
     });
 
     let application_name_clone = application_name.to_string();
-    let cfg_clone = cfg.clone();
+    let realm_clone = cfg.clone();
     let desktop_files_clone = applications_opener_tx.clone();
     application.connect_activate(move |app| {
         debug!("app activated");
@@ -63,16 +64,8 @@ pub fn start_ui(
             .css_classes(vec![String::from("list")])
             .build();
 
-        let applications = from_config(&cfg_clone);
-        let applications_len = cfg_clone.applications.len();
-        for (idx, application_config) in cfg_clone.applications.iter().enumerate(){
-            let application = match applications.get(&application_config.id) {
-                Some(app) => app,
-                None => {
-                    warn!("application with id '{}' not found in applications map", application_config.id);
-                    continue;
-                }
-            };
+        let applications_len = realm_clone.applications.len();
+        for (idx, application) in realm_clone.applications.iter().enumerate(){
             let mut button_css_classes = vec![String::from("application")];
             if idx == 0 {
                 button_css_classes.push("first".into());

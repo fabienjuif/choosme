@@ -109,27 +109,5 @@ impl Config {
 }
 
 impl ApplicationConfig {
-    pub fn match_uri(&self, uri: &str) -> bool {
-        if self.prefixes.is_none() && self.regexps.is_none() {
-            return false;
-        }
-        // testing prefixes since it should be faster than regexps
-        if let Some(prefixes) = &self.prefixes {
-            for prefix in prefixes {
-                if uri.starts_with(prefix) {
-                    return true;
-                }
-            }
-        }
-        // and now regexps
-        if let Some(regexps) = &self.regexps {
-            for regexp in regexps {
-                // TODO: maybe cache regexps later
-                if Regex::new(regexp).map(|r| r.is_match(uri)).unwrap_or(false) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
+
 }
