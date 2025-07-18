@@ -161,25 +161,23 @@ fn run(application_id: &str, application_name: &str) -> Result<()> {
     // if no daemon mode, we try to connect to it
     // and if we fail we fallback with local resolution (and eventually start the UI onf fallback)
     if !daemon_mode {
-        if let Some(uri) = &cli.uri {
-            if let Ok(dbus_client) = dbus::DBUSClient::new() {
-                debug!("connected to dbus in client mode");
-                match dbus_client.open(&realm_id, uri) {
-                    Ok(outputs) => {
-                        info!("open command executed successfully: {:?}", outputs);
-                        std::process::exit(0);
-                    }
-                    Err(e) => {
-                        // we are not exiting here, we will fallback to standalone mode
-                        error!(
-                            "failed to execute open command: {}, fallbacking to standalone mode",
-                            e
-                        );
-                    }
+        if let Ok(dbus_client) = dbus::DBUSClient::new() {
+            debug!("connected to dbus in client mode");
+            match dbus_client.open(&realm_id, &cli.uri.clone().unwrap_or_default()) {
+                Ok(outputs) => {
+                    info!("open command executed successfully: {:?}", outputs);
+                    std::process::exit(0);
                 }
-            } else {
-                warn!("failed to create dbus client, using standalone mode");
+                Err(e) => {
+                    // we are not exiting here, we will fallback to standalone mode
+                    error!(
+                        "failed to execute open command: {}, fallbacking to standalone mode",
+                        e
+                    );
+                }
             }
+        } else {
+            warn!("failed to create dbus client, using standalone mode");
         }
     }
 

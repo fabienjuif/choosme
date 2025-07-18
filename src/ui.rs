@@ -10,6 +10,8 @@ use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use tracing::{debug, error, info, warn};
 
+// TODO: start_ui should start the UI for given list of realms, not just one.
+//       Daemon mode will pass all realms, and then open the right window
 pub fn start_ui(
     application_id: &str,
     application_name: &str,
