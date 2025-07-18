@@ -21,7 +21,10 @@ pub struct Application {
 
 impl Application {
     pub fn new_from_config(application_config: &crate::config::ApplicationConfig) -> Result<Self> {
-        let desktop_app_info = resolve_desktop_file_from_config(application_config);
+        let desktop_app_info = application_config
+            .desktop_file
+            .as_ref()
+            .and_then(|desktop_file| resolve_desktop_file(desktop_file));
 
         let mut icon_name = None;
         if let Some(app_info) = &desktop_app_info {
@@ -95,7 +98,7 @@ impl Application {
 
     pub fn desktop_app_info(&self) -> Option<DesktopAppInfo> {
         if let Some(desktop_file) = &self.desktop_file {
-            return DesktopAppInfo::from_filename(desktop_file);
+            return resolve_desktop_file(desktop_file);
         }
         None
     }
@@ -125,40 +128,24 @@ impl Application {
     }
 }
 
-fn resolve_desktop_file_from_config(
-    application_config: &crate::config::ApplicationConfig,
-) -> Option<DesktopAppInfo> {
-    let Some(desktop_file_path_str) = &application_config.desktop_file else {
-        return None;
-    };
-    if desktop_file_path_str.is_empty() {
-        warn!("desktop file path is empty, skipping");
-        return None;
-    }
-
+fn resolve_desktop_file(desktop_file_path: &str) -> Option<DesktopAppInfo> {
     let home_dir_str = env::var("HOME").or_else(|_| env::var("USERPROFILE")).ok();
 
-    let mut desktop_file_path_buf = PathBuf::from(desktop_file_path_str);
+    let mut desktop_file_path_buf = PathBuf::from(desktop_file_path);
 
-    if let Some(end) = desktop_file_path_str.strip_prefix("~/") {
+    if let Some(end) = desktop_file_path.strip_prefix("~/") {
         if let Some(h_dir_path_str) = home_dir_str.as_ref() {
             let mut h_dir_path_buf = PathBuf::from(h_dir_path_str);
             h_dir_path_buf.push(end);
             desktop_file_path_buf = h_dir_path_buf;
         } else {
-            warn!(
-                "unable to to resolve '~' in path: {}",
-                desktop_file_path_str
-            );
+            warn!("unable to to resolve '~' in path: {desktop_file_path}",);
             return None;
         }
     }
     let desktop_file_path = desktop_file_path_buf.as_path();
     if !desktop_file_path.exists() {
-        warn!(
-            "desktop file not found, skipping: {}",
-            desktop_file_path_str
-        );
+        warn!("desktop file not found, skipping: {:?}", desktop_file_path);
         return None;
     }
     DesktopAppInfo::from_filename(desktop_file_path)
