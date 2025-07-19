@@ -6,6 +6,7 @@ use xdg::BaseDirectories;
 
 pub const DEFAULT_CONFIG_ID: &str = "";
 
+// TODO: css per realm
 pub fn read_css_file() -> Result<String> {
     let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
     let css_path = xdg_dirs.place_config_file("style.css")?;

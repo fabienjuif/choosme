@@ -21,7 +21,7 @@ use tracing::{debug, error, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
-use ui::start_ui;
+use ui::{UICommand, start_ui};
 use xdg::BaseDirectories;
 
 fn main() {
@@ -214,7 +214,7 @@ fn run(application_id: &str, application_name: &str) -> Result<()> {
     };
 
     let (shutdown_signal_tx, shutdown_signal_rx) = mpsc::channel::<()>();
-    let (ui_tx, ui_rx) = async_channel::bounded::<String>(1);
+    let (ui_tx, ui_rx) = async_channel::bounded::<UICommand>(1);
 
     // register dbus in daemon mode
     let applications_opener_clone = applications_opener_tx.clone();
