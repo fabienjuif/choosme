@@ -36,8 +36,11 @@ pub fn start_applications_opener() -> (JoinHandle<()>, Sender<ApplicationOpenerC
     let (tx, rx) = mpsc::channel();
 
     let jh = std::thread::spawn(move || {
-        // TODO: avoid reloading realms here, for now we are doing this because
-        //     : we can not pass realms between threads because of gio *void
+        // TODO: Avoid reloading realms here. Currently, this is necessary because
+        //       realms cannot be passed between threads due to limitations in the
+        //       GIO library. Specifically, "gio *void" refers to the use of raw
+        //       pointers in GIO's API, which are not thread-safe. To resolve this,
+        //       consider serializing the realm data or using a thread-safe wrapper.
         let realms = match realm::Realm::load_all() {
             Ok(realms) => realms,
             Err(e) => {
