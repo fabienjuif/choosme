@@ -139,7 +139,7 @@ fn resolve_desktop_file(desktop_file_path: &str) -> Option<DesktopAppInfo> {
             h_dir_path_buf.push(end);
             desktop_file_path_buf = h_dir_path_buf;
         } else {
-            warn!("unable to to resolve '~' in path: {desktop_file_path}",);
+            warn!("unable to resolve '~' in path: {desktop_file_path}",);
             return None;
         }
     }
