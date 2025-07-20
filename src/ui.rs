@@ -6,6 +6,7 @@ use gtk4::{self as gtk, Align, Box, Image, Label, ListBox, Orientation, Selectio
 use gtk4::{Application, Button};
 use gtk4::{glib, prelude::*};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use tracing::{debug, error, info, warn};
@@ -20,23 +21,20 @@ pub struct OpenWindowParams {
     pub uris: Vec<String>,
 }
 
-// TODO: start_ui should start the UI for given list of realms, not just one.
-//       Daemon mode will pass all realms, and then open the right window
 pub fn start_ui(
     application_id: &str,
     application_name: &str,
-    cfg: &Realm,
+    realms: HashMap<String, Realm>,
     applications_opener_tx: Sender<ApplicationOpenerCommand>,
     ui_rx: async_channel::Receiver<UICommand>,
     daemon_mode: bool,
-    uri: Option<String>,
-) -> Application {
+) -> (Application, gio::ApplicationHoldGuard) {
     let application = Application::builder()
         .application_id(application_id)
         .flags(gio::ApplicationFlags::HANDLES_OPEN | gio::ApplicationFlags::NON_UNIQUE)
         .build();
 
-    let shared_files: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(uri));
+    let shared_files: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let shared_files_clone_open = Rc::clone(&shared_files);
 
     // connect to the 'open' signal, which is triggered when the application is launched with URIs/files.
@@ -47,8 +45,7 @@ pub fn start_ui(
     });
 
     let application_name_clone = application_name.to_string();
-    let realm_clone = cfg.clone();
-    application.connect_activate(move |app| {
+    application.connect_activate(move |_app| {
         debug!("app activated");
 
         // css
@@ -69,34 +66,6 @@ pub fn start_ui(
         };
 
         debug!("CSS is loaded");
-
-        // TODO: something to say we are ready to receive window requests
-    });
-
-    application.connect_window_added(move |app, _| {
-        debug!("window added");
-        if let Some(window) = app.active_window() {
-            window.connect_close_request(move |win| {
-                if daemon_mode {
-                    debug!("close request received, hiding window instead of closing");
-                    win.hide();
-                    gtk4::glib::Propagation::Stop
-                } else {
-                    debug!("close request received, closing window");
-                    let Some(application) = win.application() else {
-                        error!("no application found for window");
-                        std::process::exit(1);
-                    };
-                    application.quit();
-                    gtk4::glib::Propagation::Proceed
-                }
-            });
-            if !daemon_mode {
-                window.present();
-            }
-        } else {
-            error!("app opened but no active window found");
-        }
     });
 
     let app_clone = application.clone();
@@ -106,9 +75,13 @@ pub fn start_ui(
                 Ok(cmd) => match cmd {
                     UICommand::OpenWindow(OpenWindowParams { realm_id, uris }) => {
                         debug!("received command to open window for realm: {}", realm_id);
+                        let Some(realm) = realms.get(&realm_id) else {
+                            error!("realm not found: {}", realm_id);
+                            continue;
+                        };
                         let title = format!("{application_name_clone} - {realm_id}");
                         let window = build_window(
-                            realm_clone.clone(),
+                            realm,
                             daemon_mode,
                             applications_opener_tx.clone(),
                             shared_files.clone(),
@@ -130,11 +103,12 @@ pub fn start_ui(
     });
 
     debug!("application is initialized and connected to activate signal");
-    application
+    let hold_guard = application.hold();
+    (application, hold_guard)
 }
 
 fn build_window(
-    realm: Realm,
+    realm: &Realm,
     daemon_mode: bool,
     applications_opener_tx: Sender<ApplicationOpenerCommand>,
     shared_files: Rc<RefCell<Option<String>>>,

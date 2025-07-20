@@ -239,15 +239,28 @@ fn run(application_id: &str, application_name: &str) -> Result<()> {
     // start the ui
     if !resolved {
         let applications_opener_clone = applications_opener_tx.clone();
-        let ui_application = start_ui(
+        let (ui_application, _ui_hold) = start_ui(
             application_id,
             application_name,
-            realm,
+            realms,
             applications_opener_clone,
             ui_rx,
             daemon_mode,
-            cli.uri,
         );
+
+        // if not daemon we want to let the UI know there is a realm ready to be opened
+        if !daemon_mode {
+            debug!("sending OpenWindow command to UI for realm: {}", realm_id);
+            ui_tx
+                .send_blocking(UICommand::OpenWindow(ui::OpenWindowParams {
+                    realm_id: realm_id.clone(),
+                    uris: cli.uri.clone().into_iter().collect(),
+                }))
+                .context(format_err!(
+                    "failed to send OpenWindow command to UI for realm: {}",
+                    realm_id
+                ))?;
+        }
 
         info!("running application: {}", application_id);
         let exit_code = ui_application.run_with_args::<String>(&[]);

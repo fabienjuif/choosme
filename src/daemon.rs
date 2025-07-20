@@ -21,7 +21,7 @@ struct Daemon {
     realms: HashMap<String, Realm>,
     default_applications_ids: HashMap<String, String>,
     application_opener_tx: Sender<ApplicationOpenerCommand>,
-    toggle_ui_tx: async_channel::Sender<UICommand>,
+    ui_tx: async_channel::Sender<UICommand>,
 }
 
 impl Daemon {
@@ -72,7 +72,7 @@ impl Daemon {
 
         // fallbacking to UI
         info!("no matching desktop file found, falling back to UI");
-        self.toggle_ui_tx
+        self.ui_tx
             .send_blocking(UICommand::OpenWindow(OpenWindowParams {
                 realm_id: inputs.realm_id.clone(),
                 uris: vec![inputs.uri],
@@ -157,7 +157,7 @@ pub fn register_dbus(
     application_name: &str,
     realms: HashMap<String, Realm>,
     desktop_files_tx: Sender<ApplicationOpenerCommand>,
-    toggle_ui_tx: async_channel::Sender<UICommand>,
+    ui_tx: async_channel::Sender<UICommand>,
     shutdown_rx: Receiver<()>,
 ) -> Result<JoinHandle<()>> {
     debug!("registering dbus for application: {}", application_name);
@@ -167,7 +167,7 @@ pub fn register_dbus(
         realms,
         default_applications_ids: HashMap::new(),
         application_opener_tx: desktop_files_tx,
-        toggle_ui_tx,
+        ui_tx,
     };
 
     // dbus descriptions
