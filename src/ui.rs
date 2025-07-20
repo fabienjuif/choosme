@@ -176,9 +176,7 @@ fn build_window(
             }
             info!("after sending command, quitting the app");
             if daemon_mode {
-                app_for_closure.active_window().map(|window| {
-                    window.close();
-                });
+                if let Some(window) = app_for_closure.active_window() { window.close(); }
             } else {
                 app_for_closure.quit();
             }
