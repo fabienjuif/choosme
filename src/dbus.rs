@@ -10,13 +10,13 @@ pub const DEST: &str = "juif.fabien.choosme";
 // dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Open string:"http://example.com"
 
 pub const OPEN_METHOD: &str = "Open";
-pub const OPEN_METHOD_INPUTS: (&str,) = ("uri",);
+pub const OPEN_METHOD_INPUTS: (&str, &str) = ("realm_id", "uri");
 pub const OPEN_METHOD_OUTPUTS: (&str,) = ("status",);
 
 // dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Status
 
 pub const STATUS_METHOD: &str = "Status";
-pub const STATUS_METHOD_INPUTS: () = ();
+pub const STATUS_METHOD_INPUTS: (&str,) = ("realm_id",);
 pub const STATUS_METHOD_OUTPUTS: (&str,) = ("applications",);
 
 // dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.Kill
@@ -28,21 +28,25 @@ pub const KILL_METHOD_OUTPUTS: () = ();
 // dbus-send --print-reply --dest=juif.fabien.choosme / juif.fabien.choosme.SetDefault int64:1
 
 pub const SET_DEFAULT_METHOD: &str = "SetDefault";
-pub const SET_DEFAULT_METHOD_INPUTS: (&str,) = ("index",);
+pub const SET_DEFAULT_METHOD_INPUTS: (&str, &str) = ("realm_id", "index");
 pub const SET_DEFAULT_METHOD_OUTPUTS: () = ();
 
 #[derive(Debug)]
 pub struct OpenCmdInputs {
+    pub realm_id: String,
     pub uri: String,
 }
 
 impl OpenCmdInputs {
-    pub fn from_dbus_input(input: (String,)) -> Self {
-        OpenCmdInputs { uri: input.0 }
+    pub fn from_dbus_input(input: (String, String)) -> Self {
+        OpenCmdInputs {
+            realm_id: input.0,
+            uri: input.1,
+        }
     }
 
-    pub fn to_dbus_input(&self) -> (String,) {
-        (self.uri.clone(),)
+    pub fn to_dbus_input(&self) -> (String, String) {
+        (self.realm_id.clone(), self.uri.clone())
     }
 }
 
@@ -52,13 +56,13 @@ pub struct OpenCmdOutputs {
 }
 
 impl OpenCmdOutputs {
-    pub fn to_dbus_output(&self) -> (String,) {
-        (self.status.clone().into(),)
-    }
-
     pub fn from_dbus_output(output: (String,)) -> Result<Self, ToggleStatusParseError> {
         let status = OpenCmdOutputsStatus::try_from(output.0)?;
         Ok(OpenCmdOutputs { status })
+    }
+
+    pub fn to_dbus_output(&self) -> (String,) {
+        (self.status.clone().into(),)
     }
 }
 
@@ -88,7 +92,7 @@ pub enum ToggleStatusParseError {
 impl std::fmt::Display for ToggleStatusParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ToggleStatusParseError::UnknownStatus(s) => write!(f, "Unknown status: {}", s),
+            ToggleStatusParseError::UnknownStatus(s) => write!(f, "Unknown status: {s}"),
             ToggleStatusParseError::EmptyString => write!(f, "Empty string provided"),
         }
     }
@@ -112,14 +116,18 @@ impl TryFrom<String> for OpenCmdOutputsStatus {
 }
 
 #[derive(Debug)]
-pub struct StatusCmdInputs {}
+pub struct StatusCmdInputs {
+    pub realm_id: String,
+}
 
 impl StatusCmdInputs {
-    pub fn from_dbus_input(_input: ()) -> Self {
-        StatusCmdInputs {}
+    pub fn from_dbus_input(_input: (String,)) -> Self {
+        StatusCmdInputs { realm_id: _input.0 }
     }
 
-    pub fn to_dbus_input(&self) {}
+    pub fn to_dbus_input(&self) -> (String,) {
+        (self.realm_id.clone(),)
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -197,17 +205,21 @@ pub struct StatusCmdOutputApplication {
 
 #[derive(Debug)]
 pub struct SetDefaultCmdInputs {
+    pub realm_id: String,
     pub index: i64,
 }
 
 impl SetDefaultCmdInputs {
-    pub fn from_dbus_input(input: (i64,)) -> Self {
-        Self { index: input.0 }
+    pub fn from_dbus_input(input: (String, i64)) -> Self {
+        Self {
+            realm_id: input.0,
+            index: input.1,
+        }
     }
 
     #[allow(clippy::unused_unit)]
-    pub fn to_dbus_input(&self) -> (i64,) {
-        (self.index,)
+    pub fn to_dbus_input(&self) -> (String, i64) {
+        (self.realm_id.clone(), self.index)
     }
 }
 
@@ -242,9 +254,10 @@ impl DBUSClient {
             .with_proxy(DEST, "/", Duration::from_millis(2000))
     }
 
-    pub fn open(&self, uri: &str) -> Result<OpenCmdOutputs> {
+    pub fn open(&self, realm_id: &str, uri: &str) -> Result<OpenCmdOutputs> {
         debug!("sending open command with uri: {}", uri);
         let msg = OpenCmdInputs {
+            realm_id: realm_id.to_string(),
             uri: uri.to_string(),
         };
         let result = self
@@ -256,9 +269,11 @@ impl DBUSClient {
         Ok(out)
     }
 
-    pub fn status(&self) -> Result<StatusCmdOutputs> {
+    pub fn status(&self, realm_id: &str) -> Result<StatusCmdOutputs> {
         debug!("sending status command");
-        let msg = StatusCmdInputs {};
+        let msg = StatusCmdInputs {
+            realm_id: realm_id.to_string(),
+        };
         let result = self
             .get_proxy()
             .method_call(DEST, STATUS_METHOD, msg.to_dbus_input())?;
@@ -279,9 +294,12 @@ impl DBUSClient {
         Ok(out)
     }
 
-    pub fn set_default(&self, index: i64) -> Result<SetDefaultCmdOutputs> {
+    pub fn set_default(&self, realm_id: &str, index: i64) -> Result<SetDefaultCmdOutputs> {
         debug!("sending set_default command with index: {}", index);
-        let msg = SetDefaultCmdInputs { index };
+        let msg = SetDefaultCmdInputs {
+            realm_id: realm_id.to_string(),
+            index,
+        };
         #[allow(clippy::let_unit_value)]
         let result = self
             .get_proxy()

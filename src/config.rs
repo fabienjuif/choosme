@@ -1,10 +1,12 @@
-use anyhow::Result;
-use regex::Regex;
+use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::{env, fs, io};
-use tracing::info;
+use std::{collections::HashMap, env, ffi::OsStr, fs, io};
+use tracing::{error, info};
 use xdg::BaseDirectories;
 
+pub const DEFAULT_CONFIG_ID: &str = "";
+
+// TODO: css per realm
 pub fn read_css_file() -> Result<String> {
     let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
     let css_path = xdg_dirs.place_config_file("style.css")?;
@@ -24,72 +26,64 @@ pub fn read_css_file() -> Result<String> {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct DesktopFileConfig {
-    /// used to identify the desktop file in the config
-    /// this is either the path or the name
-    /// this is for internal use only, not displayed to the user
-    #[serde(skip_serializing)]
-    #[serde(skip_deserializing)]
-    pub id: String,
-    // TODO: make path optional, and just resolve by name
-    pub path: String,
+pub struct ApplicationConfig {
     /// if set, this name is printed instead of the one in the desktop file
     pub alias: Option<String>,
+    /// path or name of the desktop file
+    pub desktop_file: Option<String>,
+    /// if set, this command is run instead of the desktop file
+    /// this is useful for applications that do not have a desktop file
+    /// or for custom commands
+    pub command: Option<String>,
+    /// if set, these prefixes are used to match the URI
     pub prefixes: Option<Vec<String>>,
+    /// if set, these regexps are used to match the URI
     pub regexps: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     #[serde(rename = "application")]
-    pub desktop_files: Vec<DesktopFileConfig>,
+    pub applications: Vec<ApplicationConfig>,
 }
 
 impl Config {
-    pub fn read() -> Result<Self> {
+    pub fn read_all() -> Result<HashMap<String, Self>> {
         let xdg_dirs = BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"));
-        let config_path = xdg_dirs.place_config_file("config.toml")?;
-        info!("config path: {}", config_path.display());
+        let config_files = xdg_dirs.list_config_files("");
 
-        let config_content = fs::read_to_string(&config_path)?;
-        let mut config: Config = toml::from_str(&config_content)?;
+        let mut configs = HashMap::new();
+        let mut read_paths = Vec::new();
+        for file_path in config_files {
+            if file_path.extension() != Some(OsStr::new("toml")) {
+                continue; // skip non-toml files
+            }
+            let config_content = fs::read_to_string(&file_path)?;
+            let mut config: Config = toml::from_str(&config_content)?;
+            for application_config in &mut config.applications {
+                // TODO: might compiple regexps here
 
-        for desktop_file in &mut config.desktop_files {
-            // TODO: might compiple regexps here
+                if application_config.desktop_file.is_none() && application_config.command.is_none()
+                {
+                    error!("application config must have either desktop_file or command set");
+                }
+            }
 
-            desktop_file.id = desktop_file.path.clone();
+            let stem = file_path
+                .file_stem()
+                .and_then(OsStr::to_str)
+                .context("failed to get file stem")?;
+            let id = if stem == "config" || stem.is_empty() {
+                DEFAULT_CONFIG_ID
+            } else {
+                stem.trim_start_matches("config-")
+            };
+            configs.insert(id.to_string(), config);
+            read_paths.push(file_path);
         }
-
-        Ok(config)
-    }
-
-    pub fn find_matching_desktop_file(&self, uri: &str) -> Option<&DesktopFileConfig> {
-        self.desktop_files.iter().find(|df| df.match_uri(uri))
+        info!("read {} config files: {:?}", configs.len(), read_paths);
+        Ok(configs)
     }
 }
 
-impl DesktopFileConfig {
-    pub fn match_uri(&self, uri: &str) -> bool {
-        if self.prefixes.is_none() && self.regexps.is_none() {
-            return false;
-        }
-        // testing prefixes since it should be faster than regexps
-        if let Some(prefixes) = &self.prefixes {
-            for prefix in prefixes {
-                if uri.starts_with(prefix) {
-                    return true;
-                }
-            }
-        }
-        // and now regexps
-        if let Some(regexps) = &self.regexps {
-            for regexp in regexps {
-                // TODO: maybe cache regexps later
-                if Regex::new(regexp).map(|r| r.is_match(uri)).unwrap_or(false) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-}
+impl ApplicationConfig {}

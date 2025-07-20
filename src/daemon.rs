@@ -1,44 +1,48 @@
 use std::{
+    collections::HashMap,
     sync::mpsc::{Receiver, Sender},
     thread::{self, JoinHandle},
     time::Duration,
 };
 
-use anyhow::Result;
+use anyhow::{Context as _, Result, format_err};
 use dbus::{MethodErr, blocking::Connection, channel::MatchingReceiver};
 use dbus_crossroads::{Context, Crossroads};
-use gtk4::gio::prelude::{AppInfoExt, IconExt};
 use tracing::{debug, info};
 
 use crate::{
-    config::Config,
     dbus::StatusCmdOutputApplication,
-    desktop_files::{DesktopFileOpenerCommand, resolve_desktop_files},
+    realm::Realm,
+    runner::ApplicationOpenerCommand,
+    ui::{OpenWindowParams, UICommand},
 };
 
 struct Daemon {
-    cfg: Config,
-    default_application_id: Option<String>,
-    desktop_files_tx: Sender<DesktopFileOpenerCommand>,
-    toggle_ui_tx: async_channel::Sender<String>,
+    realms: HashMap<String, Realm>,
+    default_applications_ids: HashMap<String, String>,
+    application_opener_tx: Sender<ApplicationOpenerCommand>,
+    ui_tx: async_channel::Sender<UICommand>,
 }
 
 impl Daemon {
     fn open(&self, inputs: crate::dbus::OpenCmdInputs) -> Result<crate::dbus::OpenCmdOutputs> {
         debug!("open command received with inputs: {:?}", inputs);
+        let realm = self
+            .realms
+            .get(&inputs.realm_id)
+            .context(format_err!("realm not found: {}", inputs.realm_id))?;
 
         // try to find a matching desktop file
-        if let Some(desktop_file) = self.cfg.find_matching_desktop_file(&inputs.uri) {
-            info!("found matching desktop file: {:?}", desktop_file.id);
+        if let Some(application) = realm.find_application(&inputs.uri) {
+            info!("found matching application: {:?}", application.id);
 
             // send command to desktop file opener
-            self.desktop_files_tx
-                .send(DesktopFileOpenerCommand::Open(
-                    crate::desktop_files::OpenParams {
-                        uris: vec![inputs.uri],
-                        desktop_file_id: desktop_file.id.clone(),
-                    },
-                ))
+            self.application_opener_tx
+                .send(ApplicationOpenerCommand::Open(crate::runner::OpenParams {
+                    realm_id: inputs.realm_id.clone(),
+                    uris: vec![inputs.uri],
+                    application_id: application.id.clone(),
+                }))
                 .map_err(|e| anyhow::anyhow!("failed to send command: {}", e))?;
 
             return Ok(crate::dbus::OpenCmdOutputs {
@@ -47,23 +51,17 @@ impl Daemon {
         }
 
         // fallback to default application if set
-        if let Some(default_id) = &self.default_application_id {
-            if let Some(desktop_file) = self
-                .cfg
-                .desktop_files
-                .iter()
-                .find(|df| &df.id == default_id)
-            {
-                info!("using default application: {:?}", desktop_file.id);
+        if let Some(default_id) = self.default_applications_ids.get(&inputs.realm_id) {
+            if let Some(application) = realm.applications.iter().find(|df| &df.id == default_id) {
+                info!("using default application: {:?}", application.id);
 
                 // send command to desktop file opener
-                self.desktop_files_tx
-                    .send(DesktopFileOpenerCommand::Open(
-                        crate::desktop_files::OpenParams {
-                            uris: vec![inputs.uri],
-                            desktop_file_id: desktop_file.id.clone(),
-                        },
-                    ))
+                self.application_opener_tx
+                    .send(ApplicationOpenerCommand::Open(crate::runner::OpenParams {
+                        realm_id: inputs.realm_id.clone(),
+                        uris: vec![inputs.uri],
+                        application_id: application.id.clone(),
+                    }))
                     .map_err(|e| anyhow::anyhow!("failed to send command: {}", e))?;
 
                 return Ok(crate::dbus::OpenCmdOutputs {
@@ -74,8 +72,11 @@ impl Daemon {
 
         // fallbacking to UI
         info!("no matching desktop file found, falling back to UI");
-        self.toggle_ui_tx
-            .send_blocking(inputs.uri)
+        self.ui_tx
+            .send_blocking(UICommand::OpenWindow(OpenWindowParams {
+                realm_id: inputs.realm_id.clone(),
+                uris: vec![inputs.uri],
+            }))
             .map_err(|e| anyhow::anyhow!("failed to send toggle UI command: {}", e))?;
 
         Ok(crate::dbus::OpenCmdOutputs {
@@ -89,24 +90,22 @@ impl Daemon {
     ) -> Result<crate::dbus::StatusCmdOutputs> {
         debug!("status command received with inputs: {:?}", inputs);
 
-        let resolved = resolve_desktop_files(&self.cfg);
+        let realm = self
+            .realms
+            .get(&inputs.realm_id)
+            .context(format_err!("realm not found: {}", inputs.realm_id))?;
+
+        let default_realm_id = self.default_applications_ids.get(&inputs.realm_id);
 
         Ok(crate::dbus::StatusCmdOutputs {
-            applications: self
-                .cfg
-                .desktop_files
+            applications: realm
+                .applications
                 .iter()
-                .map(|df| StatusCmdOutputApplication {
-                    id: df.id.clone(),
-                    name: df.alias.clone().unwrap_or_else(|| df.id.clone()),
-                    is_default: self.default_application_id.as_ref() == Some(&df.id),
-                    icon: resolved
-                        .get(&df.id)
-                        .and_then(|d| {
-                            d.icon()
-                                .map(|i| i.to_string().map_or("".to_string(), |i| i.into()))
-                        })
-                        .unwrap_or("".to_string()),
+                .map(|app| StatusCmdOutputApplication {
+                    id: app.id.clone(),
+                    name: app.display_name.clone(),
+                    is_default: default_realm_id == Some(&app.id),
+                    icon: app.icon_name.clone().unwrap_or_default(),
                 })
                 .collect(),
         })
@@ -131,17 +130,24 @@ impl Daemon {
         debug!("set_default command received with inputs: {:?}", inputs);
 
         if inputs.index < 0 {
-            self.default_application_id = None;
+            self.default_applications_ids.remove(&inputs.realm_id);
             return Ok(crate::dbus::SetDefaultCmdOutputs {});
         }
 
-        let desktop_file = self
-            .cfg
-            .desktop_files
+        let realm = self
+            .realms
+            .get(&inputs.realm_id)
+            .context(format_err!("realm not found: {}", inputs.realm_id))?;
+        let application = realm
+            .applications
             .get(inputs.index as usize)
-            .ok_or_else(|| anyhow::anyhow!("invalid index: {}", inputs.index))?;
+            .context(format_err!(
+                "application not found at index: {}",
+                inputs.index
+            ))?;
 
-        self.default_application_id = Some(desktop_file.id.clone());
+        self.default_applications_ids
+            .insert(inputs.realm_id.clone(), application.id.clone());
 
         Ok(crate::dbus::SetDefaultCmdOutputs {})
     }
@@ -149,20 +155,19 @@ impl Daemon {
 
 pub fn register_dbus(
     application_name: &str,
-    cfg: Config,
-    desktop_files_tx: Sender<DesktopFileOpenerCommand>,
-    toggle_ui_tx: async_channel::Sender<String>,
+    realms: HashMap<String, Realm>,
+    desktop_files_tx: Sender<ApplicationOpenerCommand>,
+    ui_tx: async_channel::Sender<UICommand>,
     shutdown_rx: Receiver<()>,
 ) -> Result<JoinHandle<()>> {
     debug!("registering dbus for application: {}", application_name);
 
     // preparing daemon (thread safe is necessary for dbus)
-    // TODO:
     let daemon = Daemon {
-        cfg,
-        default_application_id: None,
-        desktop_files_tx,
-        toggle_ui_tx,
+        realms,
+        default_applications_ids: HashMap::new(),
+        application_opener_tx: desktop_files_tx,
+        ui_tx,
     };
 
     // dbus descriptions
@@ -174,7 +179,7 @@ pub fn register_dbus(
             crate::dbus::OPEN_METHOD,
             crate::dbus::OPEN_METHOD_INPUTS,
             crate::dbus::OPEN_METHOD_OUTPUTS,
-            move |_: &mut Context, daemon: &mut Daemon, params: (String,)| {
+            move |_: &mut Context, daemon: &mut Daemon, params: (String, String)| {
                 let inputs = crate::dbus::OpenCmdInputs::from_dbus_input(params);
                 let output = daemon
                     .open(inputs)
@@ -188,7 +193,7 @@ pub fn register_dbus(
             crate::dbus::STATUS_METHOD,
             crate::dbus::STATUS_METHOD_INPUTS,
             crate::dbus::STATUS_METHOD_OUTPUTS,
-            move |_: &mut Context, daemon: &mut Daemon, params: ()| {
+            move |_: &mut Context, daemon: &mut Daemon, params: (String,)| {
                 let inputs = crate::dbus::StatusCmdInputs::from_dbus_input(params);
                 let output = daemon
                     .status(inputs)
@@ -216,7 +221,7 @@ pub fn register_dbus(
             crate::dbus::SET_DEFAULT_METHOD,
             crate::dbus::SET_DEFAULT_METHOD_INPUTS,
             crate::dbus::SET_DEFAULT_METHOD_OUTPUTS,
-            move |_: &mut Context, daemon: &mut Daemon, params: (i64,)| {
+            move |_: &mut Context, daemon: &mut Daemon, params: (String, i64)| {
                 let inputs = crate::dbus::SetDefaultCmdInputs::from_dbus_input(params);
                 daemon
                     .set_default(inputs)
