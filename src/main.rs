@@ -33,7 +33,10 @@ fn main() {
 
     // we keep the guard around for the duration of the application
     // to ensure that all logs are flushed before the application exits.
-    let _guard = init_logging(application_name).map_err(|e| format_err!("on init_logging(): {e}"));
+    let Ok(_guard) = init_logging(application_name) else {
+        error!("failed to initialize logging");
+        std::process::exit(1);
+    };
 
     if let Err(e) = run(&application_id, application_name) {
         error!("{e}");
@@ -239,7 +242,7 @@ fn run(application_id: &str, application_name: &str) -> Result<()> {
     // start the ui
     if !resolved {
         let applications_opener_clone = applications_opener_tx.clone();
-        let (ui_application, _ui_hold) = start_ui(
+        let (ui_application, _ui_guard) = start_ui(
             application_id,
             application_name,
             realms,
