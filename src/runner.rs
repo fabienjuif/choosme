@@ -16,7 +16,7 @@ pub struct OpenParams {
     pub uris: Vec<String>,
 
     /// The ID of the application to launch.
-    /// It has to be resolved beforce sending the Launch command. (Via UI for example).
+    /// It has to be resolved before sending the Launch command. (Via UI for example).
     pub application_id: String,
 
     /// The ID of the realm to use for launching the application.
