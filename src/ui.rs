@@ -176,10 +176,9 @@ fn build_window(
             }
             info!("after sending command, quitting the app");
             if daemon_mode {
-                app_for_closure
-                    .windows()
-                    .iter()
-                    .for_each(|window| window.hide());
+                app_for_closure.active_window().map(|window| {
+                    window.hide();
+                });
             } else {
                 app_for_closure.quit();
             }
